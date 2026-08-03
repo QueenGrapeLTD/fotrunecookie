@@ -1,0 +1,190 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function owns(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    function validUserCreate(userId) {
+      return request.resource.data.keys().hasOnly([
+          'uid', 'displayName', 'firstName', 'lastName', 'email', 'photoURL',
+          'authProvider', 'emailVerified', 'birthdate', 'birthtime',
+          'birthplace', 'birthCountry', 'birthCity', 'birthRegion', 'timezoneId',
+          'risingSign', 'zodiac', 'latitude', 'longitude', 'timezoneOffset',
+          'category', 'categories', 'preferredLanguage', 'profileUpdatedAt',
+          'lastLogin', 'createdAt'
+        ])
+        && request.resource.data.uid == userId
+        && validProfileData();
+    }
+
+    function validUserUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'displayName', 'firstName', 'lastName', 'email', 'photoURL',
+        'authProvider', 'emailVerified', 'birthdate', 'birthtime',
+        'birthplace', 'birthCountry', 'birthCity', 'birthRegion', 'timezoneId',
+        'risingSign', 'zodiac', 'latitude', 'longitude', 'timezoneOffset',
+        'category', 'categories', 'preferredLanguage', 'profileUpdatedAt',
+        'lastLogin'
+      ]) && validProfileData();
+    }
+
+    function validProfileData() {
+      return request.resource.data.displayName is string
+        && request.resource.data.displayName.size() <= 80
+        && (!request.resource.data.keys().hasAny(['firstName'])
+          || (request.resource.data.firstName is string
+            && request.resource.data.firstName.size() <= 80))
+        && (!request.resource.data.keys().hasAny(['lastName'])
+          || (request.resource.data.lastName is string
+            && request.resource.data.lastName.size() <= 80))
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 254
+        && request.resource.data.photoURL is string
+        && request.resource.data.photoURL.size() <= 1000
+        && (!request.resource.data.keys().hasAny(['authProvider'])
+          || (request.resource.data.authProvider is string
+            && request.resource.data.authProvider.size() <= 80))
+        && (!request.resource.data.keys().hasAny(['emailVerified'])
+          || request.resource.data.emailVerified is bool)
+        && request.resource.data.birthdate is string
+        && request.resource.data.birthdate.size() <= 10
+        && request.resource.data.birthtime is string
+        && request.resource.data.birthtime.size() <= 5
+        && request.resource.data.birthplace is string
+        && request.resource.data.birthplace.size() <= 120
+        && request.resource.data.birthCountry is string
+        && request.resource.data.birthCountry.size() <= 80
+        && request.resource.data.birthCity is string
+        && request.resource.data.birthCity.size() <= 80
+        && request.resource.data.birthRegion is string
+        && request.resource.data.birthRegion.size() <= 80
+        && request.resource.data.timezoneId is string
+        && request.resource.data.timezoneId.size() <= 80
+        && request.resource.data.risingSign is string
+        && request.resource.data.risingSign.size() <= 20
+        && request.resource.data.zodiac is string
+        && request.resource.data.zodiac.size() <= 20
+        && request.resource.data.category is string
+        && (request.resource.data.category == 'general'
+          || request.resource.data.category == 'love'
+          || request.resource.data.category == 'career'
+          || request.resource.data.category == 'health')
+        && request.resource.data.categories is list
+        && request.resource.data.categories.size() == 1
+        && request.resource.data.categories[0] == request.resource.data.category
+        && request.resource.data.preferredLanguage is string
+        && (request.resource.data.preferredLanguage == 'tr'
+          || request.resource.data.preferredLanguage == 'en'
+          || request.resource.data.preferredLanguage == 'de'
+          || request.resource.data.preferredLanguage == 'fr'
+          || request.resource.data.preferredLanguage == 'es'
+          || request.resource.data.preferredLanguage == 'it'
+          || request.resource.data.preferredLanguage == 'el'
+          || request.resource.data.preferredLanguage == 'zh'
+          || request.resource.data.preferredLanguage == 'ja'
+          || request.resource.data.preferredLanguage == 'ko')
+        && request.resource.data.profileUpdatedAt is string
+        && request.resource.data.profileUpdatedAt.size() <= 30
+        && (request.resource.data.latitude == null
+          || (request.resource.data.latitude is number
+            && request.resource.data.latitude >= -66
+            && request.resource.data.latitude <= 66))
+        && (request.resource.data.longitude == null
+          || (request.resource.data.longitude is number
+            && request.resource.data.longitude >= -180
+            && request.resource.data.longitude <= 180))
+        && (request.resource.data.timezoneOffset == null
+          || (request.resource.data.timezoneOffset is number
+            && request.resource.data.timezoneOffset >= -12
+            && request.resource.data.timezoneOffset <= 14));
+    }
+
+    function validFortuneData() {
+      return request.resource.data.keys().hasOnly([
+          'quote', 'zodiacId', 'zodiacIcon', 'zodiacName', 'numbers', 'timestamp',
+          'contentId', 'contentCategory', 'contentSource', 'variantType', 'requestId'
+        ])
+        && request.resource.data.quote is string
+        && request.resource.data.quote.size() >= 1
+        && request.resource.data.quote.size() <= 360
+        && request.resource.data.zodiacId is string
+        && request.resource.data.zodiacId.size() <= 20
+        && request.resource.data.zodiacIcon is string
+        && request.resource.data.zodiacIcon.size() <= 8
+        && request.resource.data.zodiacName is string
+        && request.resource.data.zodiacName.size() <= 40
+        && request.resource.data.numbers is list
+        && request.resource.data.numbers.size() <= 6
+        && request.resource.data.timestamp is string
+        && request.resource.data.timestamp.size() <= 30
+        && request.resource.data.contentId is string
+        && request.resource.data.contentId.size() <= 128
+        && request.resource.data.contentCategory is string
+        && request.resource.data.contentCategory.size() <= 32
+        && request.resource.data.contentSource is string
+        && request.resource.data.contentSource.size() <= 32
+        && request.resource.data.variantType is string
+        && request.resource.data.variantType.size() <= 32
+        && request.resource.data.requestId is string
+        && request.resource.data.requestId.size() <= 128;
+    }
+
+    match /users/{userId} {
+      allow get: if owns(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if owns(userId) && validUserCreate(userId);
+      allow update: if isAdmin() || (owns(userId) && validUserUpdate());
+      allow delete: if false;
+
+      match /fortunes/{fortuneId} {
+        allow read: if owns(userId) || isAdmin();
+        allow create, update: if owns(userId) && validFortuneData();
+        allow delete: if owns(userId) || isAdmin();
+      }
+    }
+
+    match /settings/app_config {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /public_config/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /_usage/{docId} {
+      allow read, write: if false;
+    }
+
+    match /_usage_requests/{docId} {
+      allow read, write: if false;
+    }
+
+    match /_ai_history/{docId} {
+      allow read, write: if false;
+    }
+
+    match /fortune_content/{docId} {
+      allow read, write: if false;
+    }
+
+    match /_fortune_events/{docId} {
+      allow read, write: if false;
+    }
+
+    match /_content_metrics/{docId} {
+      allow read, write: if false;
+    }
+  }
+}

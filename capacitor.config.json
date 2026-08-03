@@ -1,0 +1,21 @@
+{
+  "appId": "com.fortunecookieai.app",
+  "appName": "Fortune Cookie AI",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "backgroundColor": "#FFFBEB"
+    },
+    "FirebaseAuthentication": {
+      "skipNativeAuth": true,
+      "providers": [
+        "google.com",
+        "apple.com"
+      ]
+    }
+  }
+}
