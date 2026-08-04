@@ -1071,6 +1071,9 @@ export async function getAllUsersFromFirestore() {
   const users = [];
 
   for (const userDoc of querySnapshot.docs) {
+    const userData = userDoc.data();
+    // Email-named documents are console-friendly indexes, not a second user.
+    if (userData?.recordType === "email_index") continue;
     const fortunesSnapshot = await getDocs(
       collection(db, "users", userDoc.id, "fortunes"),
     );
@@ -1089,7 +1092,7 @@ export async function getAllUsersFromFirestore() {
     }
     users.push({
       uid: userDoc.id,
-      ...userDoc.data(),
+      ...userData,
       fortuneHistory,
     });
   }

@@ -98,6 +98,9 @@ test('server settings and trusted history are authoritative', () => {
   assert.match(functionsSource, /users\/\$\{uid\}\/fortunes\/\$\{requestId\}/);
   assert.match(authSource, /fortuneItem\?\.requestId/);
   assert.match(authSource, /getMyFortuneHistory/);
+  assert.match(functionsSource, /exports\.syncUserEmailIndex = onDocumentWritten/);
+  assert.match(authSource, /recordType === "email_index"/);
+  assert.match(html, /id="label-profile-sun"/);
 });
 
 test('Google and Apple sign-in controls are enabled provider buttons', () => {

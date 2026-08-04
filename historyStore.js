@@ -113,7 +113,14 @@ export async function mergeHistoryFromCloud(cloudItems, ownerUid) {
     return true;
   }).slice(0, 100);
 
-  await writeStoredHistory([...mergedOwnerHistory, ...otherAccounts]);
+  try {
+    await writeStoredHistory([...mergedOwnerHistory, ...otherAccounts]);
+  } catch (error) {
+    // Cloud history must still be visible when a browser or device denies
+    // access to the Capacitor Documents store. Persistence can recover later.
+    console.warn('Merged history could not be cached locally', error?.message);
+    historyCache = [...mergedOwnerHistory, ...otherAccounts];
+  }
   return mergedOwnerHistory;
 }
 

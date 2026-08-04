@@ -13,6 +13,13 @@ test("sun sign calculation rejects invalid dates", () => {
   assert.equal(calculateSunSign("invalid"), null);
 });
 
+test("calculated sun signs contain every supported interface language", () => {
+  const sign = calculateSunSign("1995-04-15");
+  for (const language of ["tr", "en", "de", "fr", "es", "it", "el", "zh", "ja", "ko"]) {
+    assert.ok(sign?.name?.[language], `Missing Aries translation for ${language}`);
+  }
+});
+
 test("rising sign requires complete astronomical inputs", () => {
   assert.equal(calculateRisingSign("1995-04-15", "08:30"), null);
 

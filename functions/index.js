@@ -1,4 +1,5 @@
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
+const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { randomUUID, verify } = require("node:crypto");
 const { GoogleGenAI, ThinkingLevel } = require("@google/genai");
 const { initializeApp } = require("firebase-admin/app");
@@ -34,6 +35,14 @@ const APPROVED_CONTENT_CACHE_MS = 10 * 60 * 1000;
 const SUPPORTED_FORTUNE_LANGUAGES = [
   "tr", "en", "de", "fr", "es", "it", "el", "zh", "ja", "ko",
 ];
+
+function emailIndexDocumentId(value) {
+  const email = String(value || "").trim().toLowerCase().slice(0, 254);
+  if (!email || !email.includes("@")) return "";
+  // Firestore document paths cannot contain a slash. The full-width slash is
+  // visually recognizable while keeping ordinary email addresses unchanged.
+  return email.replaceAll("/", "／");
+}
 const LANGUAGE_NAMES = {
   tr: "Türkçe",
   en: "English",
@@ -1177,21 +1186,74 @@ exports.getMyFortuneHistory = onCall(
   },
   async (request) => {
     const uid = requireAuth(request);
-    const recent = await getRecentAiFortunes(uid);
+    const [recent, directSnapshot] = await Promise.all([
+      getRecentAiFortunes(uid),
+      db.collection(`users/${uid}/fortunes`)
+        .orderBy("timestamp", "desc")
+        .limit(100)
+        .get(),
+    ]);
+    const directItems = directSnapshot.docs.map((item) => ({
+      id: item.id,
+      ...item.data(),
+    }));
+    const aiItems = recent.map((entry, index) => ({
+      id: `ai_${String(entry.createdAt || index).replace(/[^A-Za-z0-9_-]/g, "_")}`,
+      quote: String(entry.text || "").slice(0, 80),
+      timestamp: entry.createdAt || new Date(0).toISOString(),
+      contentId: String(entry.contentId || "").slice(0, 128),
+      contentCategory: String(entry.category || "general").slice(0, 32),
+      contentSource: String(entry.source || "curated").slice(0, 32),
+      variantType: String(entry.variantType || "approved-fallback").slice(0, 32),
+      numbers: [],
+    }));
+    const seen = new Set();
+    const items = [...directItems, ...aiItems]
+      .filter((item) => {
+        const key = `${String(item.quote || "").trim()}|${String(item.timestamp || "")}`;
+        if (!item.quote || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))
+      .slice(0, 100);
     return {
-      items: recent.map((entry, index) => ({
-        id: `ai_${String(entry.createdAt || index).replace(/[^A-Za-z0-9_-]/g, "_")}`,
-        quote: String(entry.text || "").slice(0, 80),
-        timestamp: entry.createdAt || new Date(0).toISOString(),
-        contentId: String(entry.contentId || "").slice(0, 128),
-        contentCategory: String(entry.category || "general").slice(0, 32),
-        contentSource: String(entry.source || "curated").slice(0, 32),
-        variantType: String(entry.variantType || "approved-fallback").slice(0, 32),
-        numbers: [],
-      })),
+      items,
     };
   },
 );
+
+// Keep a human-readable email entry next to UID profile documents for Firebase
+// Console administration. The UID document remains authoritative for security,
+// authentication, history, subscriptions and email-change safety.
+exports.syncUserEmailIndex = onDocumentWritten("users/{userId}", async (event) => {
+  const before = event.data?.before;
+  const after = event.data?.after;
+  const beforeData = before?.exists ? before.data() : null;
+  const afterData = after?.exists ? after.data() : null;
+
+  if (beforeData?.recordType === "email_index" || afterData?.recordType === "email_index") {
+    return;
+  }
+
+  const oldId = emailIndexDocumentId(beforeData?.email);
+  const newId = emailIndexDocumentId(afterData?.email);
+  const uid = String(afterData?.uid || beforeData?.uid || event.params.userId || "");
+
+  if (oldId && oldId !== newId) {
+    await db.doc(`users/${oldId}`).delete();
+  }
+  if (!afterData || !newId || !uid) return;
+
+  await db.doc(`users/${newId}`).set({
+    recordType: "email_index",
+    uid,
+    email: String(afterData.email || "").trim().toLowerCase(),
+    displayName: String(afterData.displayName || "").slice(0, 80),
+    sourceProfilePath: `users/${uid}`,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+});
 
 const legacyGenerateFortune = onCall(
   {

@@ -1268,19 +1268,18 @@ function resetToLanding() {
 async function renderHistoryList() {
   const ownerUid = auth.currentUser?.isAnonymous ? null : auth.currentUser?.uid || null;
   let history = await getHistory(ownerUid);
-  // Bump the cache namespace whenever cloud history reconciliation changes so
-  // a previously failed/empty sync cannot hide server records for 15 minutes.
-  const historySyncKey = ownerUid ? `fc_history_sync_v3:${ownerUid}` : '';
-  const lastHistorySync = Number(
-    historySyncKey ? localStorage.getItem(historySyncKey) : 0,
-  ) || 0;
-  const cloudSyncDue =
-    ownerUid &&
-    (history.length === 0 || Date.now() - lastHistorySync > 5 * 60 * 1000);
-  if (cloudSyncDue) {
-    const cloudHistory = await getCloudFortuneHistory();
-    history = await mergeHistoryFromCloud(cloudHistory, ownerUid);
-    localStorage.setItem(historySyncKey, String(Date.now()));
+  // History is fetched only when this modal opens, so always reconcile here.
+  // This prevents an earlier empty cache from hiding cookies created on another
+  // device or persisted by the trusted backend seconds ago.
+  const historySyncKey = ownerUid ? `fc_history_sync_v4:${ownerUid}` : '';
+  if (ownerUid) {
+    try {
+      const cloudHistory = await getCloudFortuneHistory();
+      history = await mergeHistoryFromCloud(cloudHistory, ownerUid);
+      localStorage.setItem(historySyncKey, String(Date.now()));
+    } catch (error) {
+      console.warn('Fortune Cookie history reconciliation failed:', error);
+    }
   }
   const texts = uiText[currentLang] || uiText.en;
   if (!history || history.length === 0) {
@@ -1433,7 +1432,7 @@ async function handleClearHistory() {
   if (ownerUid && !(await clearCloudFortuneHistory())) return false;
   await clearHistory(ownerUid);
   if (ownerUid) {
-    localStorage.setItem(`fc_history_sync_v3:${ownerUid}`, String(Date.now()));
+    localStorage.setItem(`fc_history_sync_v4:${ownerUid}`, String(Date.now()));
   }
   if (!modalHistory.classList.contains('hidden')) await renderHistoryList();
   return true;
