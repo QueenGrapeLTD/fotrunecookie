@@ -1918,8 +1918,40 @@ async function updateProfileMembershipStatus() {
   }
 }
 
+function renderAuthenticatedAccount(user, { closeProfile = false } = {}) {
+  if (!user || user.isAnonymous) return;
+
+  const authUnloggedBox = document.getElementById('auth-unlogged-box');
+  const authLoggedBox = document.getElementById('auth-logged-box');
+  const userAvatarImg = document.getElementById('user-avatar-img');
+  const userDisplayName = document.getElementById('user-display-name');
+  const userEmailText = document.getElementById('user-email-text');
+  const userProviderBadge = document.getElementById('user-provider-badge');
+
+  authUnloggedBox?.classList.add('hidden');
+  authLoggedBox?.classList.remove('hidden');
+  if (userDisplayName) userDisplayName.textContent = user.displayName || t('userFallback');
+  if (userEmailText) userEmailText.textContent = user.email || '';
+  if (userProviderBadge) {
+    const usesApple = user.providerData?.some(provider => provider.providerId === 'apple.com');
+    const usesPassword = user.providerData?.some(provider => provider.providerId === 'password');
+    userProviderBadge.textContent = t(
+      usesApple ? 'appleConnected' : usesPassword ? 'emailConnected' : 'googleConnected',
+    );
+  }
+  if (userAvatarImg) {
+    userAvatarImg.onerror = () => {
+      userAvatarImg.onerror = null;
+      userAvatarImg.src = `https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}`;
+    };
+    userAvatarImg.src = user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}`;
+  }
+  if (closeProfile) modalProfile?.classList.add('hidden');
+}
+
 function setupEventListeners() {
-  const registerCookieTap = () => {
+  const registerCookieTap = (event) => {
+    if (event?.cancelable) event.preventDefault();
     if (isAnimating || fortuneRequestInFlight) return;
     cookieTapCount += 1;
     triggerHapticFeedback(1);
@@ -1948,12 +1980,15 @@ function setupEventListeners() {
 
   // Three deliberate taps reveal progressive cracks, then start one request.
   cookieInteractive.addEventListener('click', registerCookieTap);
+  cookieInteractive.addEventListener('dblclick', (event) => {
+    event.preventDefault();
+  });
 
   // Keyboard Access (Enter / Space) for Cookie Cracking
   cookieInteractive.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      registerCookieTap();
+      registerCookieTap(e);
     }
   });
 
@@ -2073,29 +2108,38 @@ function setupEventListeners() {
   if (btnSignInGoogle) {
     btnSignInGoogle.addEventListener('click', async () => {
       btnSignInGoogle.disabled = true;
+      btnSignInGoogle.setAttribute('aria-busy', 'true');
       showToast(`🔑 ${t('signingGoogle')}`);
-      const res = await loginWithGoogle();
-      if (res.success && res.user) {
-        showToast(`🎉 ${t('welcome', { name: res.user.displayName || t('userFallback') })}`);
-        if (res.user.displayName && !userProfile.name) {
-          userProfile.name = res.user.displayName;
-          if (inputProfileName) inputProfileName.value = res.user.displayName;
-        }
+      try {
+        const res = await loginWithGoogle();
+        if (res.success && res.user) {
+          showToast(`🎉 ${t('welcome', { name: res.user.displayName || t('userFallback') })}`);
+          renderAuthenticatedAccount(res.user, { closeProfile: true });
+          if (res.user.displayName && !userProfile.name) {
+            userProfile.name = res.user.displayName;
+            if (inputProfileName) inputProfileName.value = res.user.displayName;
+          }
 
-        if (res.birthdate && !userProfile.birthdate) {
-          userProfile.birthdate = res.birthdate;
-          if (inputProfileBirthdate) inputProfileBirthdate.value = res.birthdate;
-          updateAstrologyCalculations();
-          showToast(`🎂 Doğum tarihi Google hesabından alındı: ${res.birthdate}`);
-        }
+          if (res.birthdate && !userProfile.birthdate) {
+            userProfile.birthdate = res.birthdate;
+            if (inputProfileBirthdate) inputProfileBirthdate.value = res.birthdate;
+            updateAstrologyCalculations();
+            showToast(`🎂 Doğum tarihi Google hesabından alındı: ${res.birthdate}`);
+          }
 
-        userProfile = await saveProfile(userProfile) || userProfile;
-        accountStateCache = null;
-        updateProfileBadge();
-      } else {
-        showToast(`⚠️ ${t('signInFailed', { error: res.error || t('cancelled') })}`);
+          userProfile = await saveProfile(userProfile) || userProfile;
+          accountStateCache = null;
+          updateProfileBadge();
+        } else {
+          showToast(`⚠️ ${t('signInFailed', { error: res.error || t('cancelled') })}`);
+        }
+      } catch (error) {
+        console.error('Google sign-in handler failed:', error);
+        showToast(`⚠️ ${t('signInFailed', { error: error?.code || t('cancelled') })}`);
+      } finally {
+        btnSignInGoogle.disabled = false;
+        btnSignInGoogle.removeAttribute('aria-busy');
       }
-      btnSignInGoogle.disabled = false;
     });
   }
 
@@ -2103,21 +2147,30 @@ function setupEventListeners() {
   if (btnSignInApple) {
     btnSignInApple.addEventListener('click', async () => {
       btnSignInApple.disabled = true;
+      btnSignInApple.setAttribute('aria-busy', 'true');
       showToast(t('signingApple'));
-      const res = await loginWithApple();
-      if (res.success && res.user) {
-        showToast(t('welcome', { name: res.user.displayName || t('userFallback') }));
-        if (res.user.displayName && !userProfile.name) {
-          userProfile.name = res.user.displayName;
-          if (inputProfileName) inputProfileName.value = res.user.displayName;
+      try {
+        const res = await loginWithApple();
+        if (res.success && res.user) {
+          showToast(t('welcome', { name: res.user.displayName || t('userFallback') }));
+          renderAuthenticatedAccount(res.user, { closeProfile: true });
+          if (res.user.displayName && !userProfile.name) {
+            userProfile.name = res.user.displayName;
+            if (inputProfileName) inputProfileName.value = res.user.displayName;
+          }
+          userProfile = await saveProfile(userProfile) || userProfile;
+          accountStateCache = null;
+          updateProfileBadge();
+        } else {
+          showToast(t('signInFailed', { error: res.error || t('cancelled') }));
         }
-        userProfile = await saveProfile(userProfile) || userProfile;
-        accountStateCache = null;
-        updateProfileBadge();
-      } else {
-        showToast(t('signInFailed', { error: res.error || t('cancelled') }));
+      } catch (error) {
+        console.error('Apple sign-in handler failed:', error);
+        showToast(t('signInFailed', { error: error?.code || t('cancelled') }));
+      } finally {
+        btnSignInApple.disabled = false;
+        btnSignInApple.removeAttribute('aria-busy');
       }
-      btnSignInApple.disabled = false;
     });
   }
 
@@ -2164,6 +2217,7 @@ function setupEventListeners() {
         inputAuthPassword.value = '';
         setEmailAuthStatus('');
         accountStateCache = null;
+        renderAuthenticatedAccount(result.user, { closeProfile: true });
         showToast(t('welcome', { name: result.user.displayName || t('userFallback') }));
       } else {
         setEmailAuthStatus(emailAuthErrorMessage(result.error), true);
@@ -2212,10 +2266,6 @@ function setupEventListeners() {
 
   const authUnloggedBox = document.getElementById('auth-unlogged-box');
   const authLoggedBox = document.getElementById('auth-logged-box');
-  const userAvatarImg = document.getElementById('user-avatar-img');
-  const userDisplayName = document.getElementById('user-display-name');
-  const userEmailText = document.getElementById('user-email-text');
-  const userProviderBadge = document.getElementById('user-provider-badge');
   const btnLogoutUser = document.getElementById('btn-logout-user');
 
   if (btnLogoutUser) {
@@ -2292,23 +2342,7 @@ function setupEventListeners() {
         : null;
 
       // Firestore'dan gelen üyelik bilgisi belliyse sayaç geçmiş eşitlemesini beklemez.
-      if (authUnloggedBox) authUnloggedBox.classList.add('hidden');
-      if (authLoggedBox) authLoggedBox.classList.remove('hidden');
-
-      if (userDisplayName) userDisplayName.textContent = user.displayName || 'Kullanıcı';
-      if (userEmailText) userEmailText.textContent = user.email || '';
-      if (userProviderBadge) {
-        const usesApple = user.providerData?.some(provider => provider.providerId === 'apple.com');
-        const usesPassword = user.providerData?.some(provider => provider.providerId === 'password');
-        userProviderBadge.textContent = t(usesApple ? 'appleConnected' : usesPassword ? 'emailConnected' : 'googleConnected');
-      }
-      if (userAvatarImg) {
-        userAvatarImg.onerror = () => {
-          userAvatarImg.onerror = null;
-          userAvatarImg.src = `https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}`;
-        };
-        userAvatarImg.src = user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}`;
-      }
+      renderAuthenticatedAccount(user);
 
       if (syncedProfile) {
         if (syncedProfile.displayName) {
@@ -2594,6 +2628,13 @@ function setupEventListeners() {
           showToast(t('adCreditGranted'));
         } else if (rewardResult.verified) {
           showToast(t('adVerifiedProgress', progress));
+        } else if (rewardResult.pending) {
+          showToast(t('adVerificationPending'));
+          for (const delay of [6000, 18000]) {
+            window.setTimeout(() => {
+              void updateAdStatusUI(true);
+            }, delay);
+          }
         } else {
           showToast(t('adUnavailable'));
         }

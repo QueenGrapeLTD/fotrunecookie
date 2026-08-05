@@ -13,6 +13,20 @@ const adminGuardSource = fs.readFileSync(
 );
 const adminHtml = fs.readFileSync(new URL('./admin.html', import.meta.url), 'utf8');
 const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+const styles = fs.readFileSync(new URL('./style.css', import.meta.url), 'utf8');
+const mainSource = fs.readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+const xcodeProject = fs.readFileSync(
+  new URL('./ios/App/App.xcodeproj/project.pbxproj', import.meta.url),
+  'utf8',
+);
+const iosEntitlements = fs.readFileSync(
+  new URL('./ios/App/App/App.entitlements', import.meta.url),
+  'utf8',
+);
+const iosInfoPlist = fs.readFileSync(
+  new URL('./ios/App/App/Info.plist', import.meta.url),
+  'utf8',
+);
 const capacitorConfig = JSON.parse(
   fs.readFileSync(new URL('./capacitor.config.json', import.meta.url), 'utf8'),
 );
@@ -34,20 +48,71 @@ test('native Google and Apple providers bridge into Firebase Auth', () => {
     capacitorConfig.plugins.FirebaseAuthentication.providers,
     ['google.com', 'apple.com'],
   );
-  assert.equal(capacitorConfig.plugins.FirebaseAuthentication.skipNativeAuth, true);
-  assert.match(authSource, /signInWithCredential/);
+  assert.equal(capacitorConfig.plugins.FirebaseAuthentication.skipNativeAuth, false);
+  assert.match(authSource, /signInWithCustomToken/);
+  assert.match(authSource, /FirebaseAuthentication\.getIdToken/);
+  assert.match(authSource, /httpsCallable\(\s*functions,\s*"exchangeNativeAuthToken"/);
+  assert.match(authSource, /nativeIdToken:\s*tokenResult\.token/);
+  assert.match(authSource, /result\.user\.uid !== nativeUid/);
   assert.match(authSource, /useCredentialManager:\s*true/);
   assert.match(authSource, /isRetryableGoogleNetworkError/);
   assert.match(authSource, /attempt < 2/);
   assert.match(authSource, /auth\/network-request-failed/);
   assert.match(authSource, /Credential Manager compatibility failure; trying legacy Google Sign-In/);
   assert.match(authSource, /useCredentialManager:\s*false/);
-  assert.match(authSource, /skipNativeAuth:\s*true/);
+  assert.match(authSource, /skipNativeAuth:\s*false/);
+  assert.match(authSource, /preserveNativeAppleDisplayName/);
+  assert.match(authSource, /nativeResult\?\.user\?\.displayName/);
   assert.match(authSource, /auth\/native-google-failed/);
-  assert.doesNotMatch(
-    authSource,
-    /GoogleAuthProvider\.credential\(\s*nativeCredential\.idToken,\s*nativeCredential\.accessToken/,
+  assert.match(authSource, /waitForAuthPersistenceAfterNativeCredential/);
+  const nativeSignInSource = authSource.slice(
+    authSource.indexOf('async function signInNatively'),
+    authSource.indexOf('export async function signInWithGoogle'),
   );
+  assert.ok(
+    nativeSignInSource.indexOf('FirebaseAuthentication.signInWithApple') <
+      nativeSignInSource.indexOf('bridgeNativeSessionIntoWebView'),
+  );
+  assert.ok(
+    nativeSignInSource.indexOf('requestNativeGoogleCredential()') <
+      nativeSignInSource.indexOf('bridgeNativeSessionIntoWebView'),
+  );
+  assert.doesNotMatch(authSource, /GoogleAuthProvider\.credential\(/);
+  assert.match(authSource, /FirebaseAuthentication\.signOut/);
+});
+
+test('iOS target is entitled and configured for Sign in with Apple', () => {
+  assert.match(iosEntitlements, /com\.apple\.developer\.applesignin/);
+  assert.match(iosEntitlements, /<string>Default<\/string>/);
+  assert.match(xcodeProject, /CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements/);
+  assert.match(xcodeProject, /com\.apple\.SignInWithApple/);
+  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 7/);
+  assert.match(xcodeProject, /TARGETED_DEVICE_FAMILY = "1,2"/);
+});
+
+test('iOS social sign-in has its native callback and recoverable button state', () => {
+  assert.match(iosInfoPlist, /<key>CFBundleURLTypes<\/key>/);
+  assert.match(iosInfoPlist, /com\.googleusercontent\.apps\.53381061591-gmsqu8nbojakstbe7l90ljvap4a28r0b/);
+  assert.match(mainSource, /Google sign-in handler failed/);
+  assert.match(mainSource, /Apple sign-in handler failed/);
+  assert.match(mainSource, /removeAttribute\('aria-busy'\)/);
+});
+
+test('iOS web layout respects notch and home indicator safe areas', () => {
+  assert.match(html, /viewport-fit=cover/);
+  assert.match(styles, /safe-area-inset-top/);
+  assert.match(styles, /safe-area-inset-bottom/);
+  assert.match(styles, /calc\(20px \+ var\(--safe-area-top\)\)/);
+  assert.match(styles, /bottom: calc\(30px \+ var\(--safe-area-bottom\)\)/);
+});
+
+test('rapid cookie taps do not trigger iOS double-tap page zoom', () => {
+  assert.match(styles, /\.cookie-wrapper\s*\{[^}]*touch-action:\s*manipulation/s);
+  assert.match(styles, /\.cookie-wrapper\s*\{[^}]*-webkit-touch-callout:\s*none/s);
+  assert.match(html, /id="cookie-interactive"/);
+  assert.match(mainSource, /event\?\.cancelable/);
+  assert.match(mainSource, /addEventListener\('dblclick'/);
+  assert.match(mainSource, /event\.preventDefault\(\)/);
 });
 
 test('mobile sessions restore locally before creating a new anonymous user', () => {
@@ -63,7 +128,8 @@ test('mobile sessions restore locally before creating a new anonymous user', () 
 test('returning social users do not leave orphan anonymous Auth accounts', () => {
   assert.match(authSource, /const anonymousUser = auth\.currentUser/);
   assert.match(authSource, /deleteUser\(anonymousUser\)/);
-  assert.match(authSource, /auth\/credential-already-in-use/);
+  assert.match(authSource, /Anonymous account cleanup/);
+  assert.match(authSource, /signInWithCustomToken\(auth, customToken\)/);
 });
 
 test('admin premium overrides survive RevenueCat synchronization', () => {
@@ -90,6 +156,10 @@ test('admin mutations are validated by callable server operations', () => {
   assert.match(functionsSource, /targetUser\?\.customClaims\?\.admin === true/);
   assert.match(functionsSource, /deleteUserData\(uid\)/);
   assert.match(functionsSource, /exports\.adminGetUserHistory = onCall/);
+  assert.match(functionsSource, /exports\.adminListUsers = onCall/);
+  assert.match(functionsSource, /exports\.adminUpdateAppSettings = onCall/);
+  assert.match(authSource, /callAdminFunction\("adminListUsers"\)/);
+  assert.match(authSource, /callAdminFunction\("adminUpdateAppSettings"/);
 });
 
 test('server settings and trusted history are authoritative', () => {
@@ -98,15 +168,31 @@ test('server settings and trusted history are authoritative', () => {
   assert.match(functionsSource, /users\/\$\{uid\}\/fortunes\/\$\{requestId\}/);
   assert.match(authSource, /fortuneItem\?\.requestId/);
   assert.match(authSource, /getMyFortuneHistory/);
-  assert.match(functionsSource, /exports\.syncUserEmailIndex = onDocumentWritten/);
-  assert.match(authSource, /recordType === "email_index"/);
+  assert.match(functionsSource, /async function syncUserEmailDirectory/);
+  assert.match(functionsSource, /user_directory\/\$\{emailId\}/);
+  assert.match(functionsSource, /await syncUserEmailDirectory\(uid, userData\)/);
+  assert.doesNotMatch(functionsSource, /onDocumentWritten/);
   assert.match(html, /id="label-profile-sun"/);
+});
+
+test('all runtime Firebase clients are locked to the production project', () => {
+  assert.match(authSource, /EXPECTED_FIREBASE_PROJECT_ID = "fortunecookieai-prod"/);
+  assert.doesNotMatch(authSource, /atonumus-fortunecookie/);
 });
 
 test('Google and Apple sign-in controls are enabled provider buttons', () => {
   assert.match(html, /id="btn-signin-google"/);
   assert.match(html, /id="btn-signin-apple"/);
   assert.doesNotMatch(html, /id="btn-signin-apple"[^>]*disabled/);
+});
+
+test('successful social credentials render the authenticated account without waiting for cloud sync', () => {
+  assert.match(mainSource, /function renderAuthenticatedAccount/);
+  assert.match(mainSource, /renderAuthenticatedAccount\(res\.user, \{ closeProfile: true \}\)/);
+  assert.match(mainSource, /authLoggedBox\?\.classList\.remove\('hidden'\)/);
+  assert.match(mainSource, /modalProfile\?\.classList\.add\('hidden'\)/);
+  assert.match(authSource, /Auth profile hydration timed out; rendering the signed-in user immediately/);
+  assert.match(authSource, /Anonymous account cleanup/);
 });
 
 test('email authentication requires verification and preserves anonymous registration state', () => {

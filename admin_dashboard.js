@@ -2,6 +2,7 @@ import {
   getAllUsersFromFirestore,
   toggleUserPremiumStatusInCloud,
   deleteUserFromCloud,
+  getUserHistoryForAdmin,
   getAppSettingsFromCloud,
   saveAppSettingsToCloud
 } from './firebaseService.js';
@@ -153,10 +154,21 @@ function renderUsersTable(usersToRender) {
   });
 
   usersTableBody.querySelectorAll('.btn-fortunes').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const uid = btn.getAttribute('data-uid');
       const userObj = allUsers.find(u => u.uid === uid);
       if (userObj) {
+        btn.disabled = true;
+        btn.textContent = '...';
+        try {
+          userObj.fortuneHistory = await getUserHistoryForAdmin(uid);
+        } catch (error) {
+          console.error('Admin history load failed:', error?.code || error?.message);
+          showToast('⚠️ Kullanıcı geçmişi yüklenemedi.');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = `📜 (${userObj.fortuneHistory?.length || 0})`;
+        }
         showUserFortunesModal(userObj);
       }
     });

@@ -10,6 +10,10 @@
 }
 
 :root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
   --bg-gradient: linear-gradient(180deg, #FFFDF5 0%, #FFF4D9 50%, #FFECC0 100%);
   --color-primary: #E65100;
   --color-primary-light: #FF8A00;
@@ -28,6 +32,7 @@ body {
   font-family: var(--font-main);
   background: var(--bg-gradient);
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -42,11 +47,16 @@ body {
   width: 100%;
   max-width: 520px;
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 18px;
+  padding:
+    calc(20px + var(--safe-area-top))
+    calc(18px + var(--safe-area-right))
+    calc(20px + var(--safe-area-bottom))
+    calc(18px + var(--safe-area-left));
   position: relative;
 }
 
@@ -253,6 +263,9 @@ body {
   height: 220px;
   cursor: pointer;
   outline: none;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   z-index: 3;
 }
@@ -1310,7 +1323,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
+  padding:
+    calc(16px + var(--safe-area-top))
+    calc(16px + var(--safe-area-right))
+    calc(16px + var(--safe-area-bottom))
+    calc(16px + var(--safe-area-left));
   animation: overlayFadeIn 0.22s ease;
 }
 @keyframes overlayFadeIn {
@@ -1705,7 +1722,7 @@ body {
 /* Toast */
 .toast {
   position: fixed;
-  bottom: 30px;
+  bottom: calc(30px + var(--safe-area-bottom));
   left: 50%;
   transform: translateX(-50%);
   background:
@@ -3467,7 +3484,11 @@ body {
   z-index: 100000;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding:
+    calc(24px + var(--safe-area-top))
+    calc(24px + var(--safe-area-right))
+    calc(24px + var(--safe-area-bottom))
+    calc(24px + var(--safe-area-left));
   background:
     radial-gradient(circle at 50% 38%, rgba(255, 214, 115, 0.32), transparent 34%),
     linear-gradient(145deg, #fffaf0, #fff1c8);

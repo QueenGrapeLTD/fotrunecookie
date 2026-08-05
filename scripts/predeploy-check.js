@@ -23,7 +23,18 @@ function readEnv(filePath) {
   );
 }
 
+function readJson(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    errors.push(`${path.basename(filePath)} geçerli JSON değil.`);
+    return null;
+  }
+}
+
 const env = readEnv(envPath);
+const expectedFirebaseProject = 'fortunecookieai-prod';
 const requiredClientKeys = [
   'VITE_FIREBASE_API_KEY',
   'VITE_FIREBASE_AUTH_DOMAIN',
@@ -33,6 +44,36 @@ const requiredClientKeys = [
 
 for (const key of requiredClientKeys) {
   if (!env[key]) errors.push(`${key} eksik.`);
+}
+
+if (env.VITE_FIREBASE_PROJECT_ID !== expectedFirebaseProject) {
+  errors.push(`VITE_FIREBASE_PROJECT_ID ${expectedFirebaseProject} olmalıdır.`);
+}
+
+if (env.VITE_FIREBASE_AUTH_DOMAIN !== `${expectedFirebaseProject}.firebaseapp.com`) {
+  errors.push(`VITE_FIREBASE_AUTH_DOMAIN ${expectedFirebaseProject}.firebaseapp.com olmalıdır.`);
+}
+
+const firebaseRc = readJson(path.join(projectRoot, '.firebaserc'));
+if (firebaseRc?.projects?.default !== expectedFirebaseProject) {
+  errors.push(`.firebaserc varsayılan projesi ${expectedFirebaseProject} olmalıdır.`);
+}
+
+const forbiddenFirebaseProject = 'atonumus-fortunecookie';
+for (const relativePath of [
+  'firebaseService.js',
+  'firebase.json',
+  '.firebaserc',
+  'android/app/google-services.json',
+  'ios/App/App/GoogleService-Info.plist',
+]) {
+  const fullPath = path.join(projectRoot, relativePath);
+  if (
+    fs.existsSync(fullPath) &&
+    fs.readFileSync(fullPath, 'utf8').includes(forbiddenFirebaseProject)
+  ) {
+    errors.push(`${relativePath} eski Firebase projesine referans veriyor.`);
+  }
 }
 
 if (/^(https?:\/\/)?(localhost|127\.0\.0\.1)(:\d+)?$/i.test(env.VITE_FIREBASE_AUTH_DOMAIN || '')) {

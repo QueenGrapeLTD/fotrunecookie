@@ -153,6 +153,10 @@ service cloud.firestore {
       }
     }
 
+    match /user_directory/{emailId} {
+      allow read, write: if false;
+    }
+
     match /settings/app_config {
       allow read: if true;
       allow write: if isAdmin();
