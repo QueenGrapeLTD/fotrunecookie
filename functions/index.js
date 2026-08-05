@@ -8,6 +8,10 @@ const { isTooSimilar } = require("./fortuneQuality");
 const { isLikelyLanguage } = require("./fortuneLanguage");
 const { getFortuneLocale } = require("./fortuneLocales");
 const {
+  advanceRewardState,
+  normalizeRewardState,
+} = require("./rewardPolicy");
+const {
   BUNDLED_FORTUNE_CONTENT,
   CATEGORIES: CONTENT_CATEGORIES,
   buildAdaptationPrompt,
@@ -24,8 +28,6 @@ const GEMINI_PROVIDER = "Gemini-3.1-Flash-Lite";
 const GEMINI_MAX_OUTPUT_TOKENS = 220;
 const ADMOB_KEYS_URL =
   "https://www.gstatic.com/admob/reward/verifier-keys.json";
-const ADMOB_DAILY_REWARD_LIMIT = 3;
-const ADMOB_ADS_PER_CREDIT = 3;
 const DEFAULT_PREMIUM_DAILY_LIMIT = 5;
 const ADMIN_PREMIUM_DAILY_LIMIT = 50;
 const db = getFirestore();
@@ -838,16 +840,7 @@ async function releaseAiUsage(uid, requestId, modelUsage = null) {
 }
 
 function adRewardState(data = {}, day = istanbulDayKey()) {
-  const currentDay = data.day === day;
-  return {
-    credits: currentDay ? Math.max(Number(data.credits) || 0, 0) : 0,
-    rewardedToday: currentDay
-      ? Math.max(Number(data.rewardedToday) || 0, 0)
-      : 0,
-    dailyLimit: ADMOB_DAILY_REWARD_LIMIT,
-    adsPerCredit: ADMOB_ADS_PER_CREDIT,
-    day,
-  };
+  return normalizeRewardState(data, day);
 }
 
 exports.getAdRewardState = onCall(
@@ -996,8 +989,8 @@ exports.adMobRewardCallback = onRequest(
         if (transactionSnap.exists) return;
 
         const day = istanbulDayKey();
-        const state = adRewardState(rewardSnap.data(), day);
-        if (state.rewardedToday >= state.dailyLimit) {
+        const transition = advanceRewardState(rewardSnap.data(), day);
+        if (!transition.accepted) {
           transaction.create(transactionRef, {
             uid,
             adUnit,
@@ -1007,25 +1000,13 @@ exports.adMobRewardCallback = onRequest(
           return;
         }
 
-        const nextRewardedToday = state.rewardedToday + 1;
-        const previousEarnedCredits = Math.floor(
-          state.rewardedToday / ADMOB_ADS_PER_CREDIT,
-        );
-        const nextEarnedCredits = Math.floor(
-          nextRewardedToday / ADMOB_ADS_PER_CREDIT,
-        );
-        const grantedCredits = Math.max(
-          nextEarnedCredits - previousEarnedCredits,
-          0,
-        );
-
         transaction.set(
           rewardRef,
           {
             uid,
             day,
-            credits: state.credits + grantedCredits,
-            rewardedToday: nextRewardedToday,
+            credits: transition.next.credits,
+            rewardedToday: transition.next.rewardedToday,
             updatedAt: FieldValue.serverTimestamp(),
           },
           { merge: true },
@@ -1033,8 +1014,8 @@ exports.adMobRewardCallback = onRequest(
         transaction.create(transactionRef, {
           uid,
           adUnit,
-          status: grantedCredits > 0 ? "granted" : "progress",
-          grantedCredits,
+          status: transition.grantedCredits > 0 ? "granted" : "progress",
+          grantedCredits: transition.grantedCredits,
           createdAt: FieldValue.serverTimestamp(),
         });
       });

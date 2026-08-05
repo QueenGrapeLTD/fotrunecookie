@@ -56,16 +56,22 @@ if (androidFirebase) {
   }
 }
 
-const iosFirebaseCandidates = [
+const iosFirebasePaths = [
   'ios/App/App/GoogleService-Info.plist',
   'ios/App/GoogleService-Info.plist',
 ];
-const iosFirebasePath = iosFirebaseCandidates.find((candidate) =>
-  fs.existsSync(path.join(root, candidate)));
-if (!iosFirebasePath) {
-  errors.push('iOS GoogleService-Info.plist bulunamadı.');
-} else {
-  const iosFirebase = read(iosFirebasePath);
+const existingIosFirebasePaths = iosFirebasePaths.filter(relativePath =>
+  fs.existsSync(path.join(root, relativePath)),
+);
+
+if (!existingIosFirebasePaths.length) {
+  errors.push(
+    `iOS GoogleService-Info.plist bulunamadı. ${iosFirebasePaths[0]} yoluna Firebase iOS dosyasını ekleyin.`,
+  );
+}
+
+for (const iosFirebasePath of existingIosFirebasePaths) {
+  const iosFirebase = fs.readFileSync(path.join(root, iosFirebasePath), 'utf8');
   if (
     iosFirebase &&
     !new RegExp(`<key>BUNDLE_ID</key>\\s*<string>${expectedAppId.replaceAll('.', '\\.')}</string>`)

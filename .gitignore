@@ -1,6 +1,7 @@
 node_modules/
 functions/node_modules/
 dist/
+build/
 android/**/build/
 android/.gradle/
 android/local.properties

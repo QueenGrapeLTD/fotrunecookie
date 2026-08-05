@@ -43,8 +43,16 @@ test("rewarded ads require server-verified credits", async () => {
     new URL("./functions/index.js", import.meta.url),
     "utf8",
   );
+  const rewardPolicySource = await readFile(
+    new URL("./functions/rewardPolicy.js", import.meta.url),
+    "utf8",
+  );
 
   assert.match(clientSource, /RewardAdPluginEvents\.Rewarded/);
+  assert.match(clientSource, /RewardAdPluginEvents\.FailedToLoad/);
+  assert.match(clientSource, /RewardAdPluginEvents\.FailedToShow/);
+  assert.match(clientSource, /rewardItem\?\.amount/);
+  assert.match(clientSource, /pending:\s*true/);
   assert.match(clientSource, /ssv:\s*\{\s*userId:\s*uid/);
   assert.match(clientSource, /getAdRewardStateFromServer/);
   assert.doesNotMatch(clientSource, /localStorage/);
@@ -53,11 +61,9 @@ test("rewarded ads require server-verified credits", async () => {
   assert.match(serverSource, /ADMOB_REWARDED_AD_UNIT_IDS/);
   assert.match(serverSource, /_ad_transactions/);
   assert.match(serverSource, /transactionId/);
-  assert.match(serverSource, /ADMOB_ADS_PER_CREDIT = 3/);
-  assert.match(
-    serverSource,
-    /Math\.floor\(\s*nextRewardedToday \/ ADMOB_ADS_PER_CREDIT/,
-  );
+  assert.match(serverSource, /advanceRewardState/);
+  assert.match(rewardPolicySource, /ADMOB_ADS_PER_CREDIT = 3/);
+  assert.match(rewardPolicySource, /nextEarnedCredits - previousEarnedCredits/);
   assert.match(serverSource, /PREMIUM_DAILY_LIMIT = 5/);
   assert.match(serverSource, /ADMIN_PREMIUM_DAILY_LIMIT = 50/);
 });
