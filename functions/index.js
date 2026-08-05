@@ -1,5 +1,4 @@
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { randomUUID, verify } = require("node:crypto");
 const { GoogleGenAI, ThinkingLevel } = require("@google/genai");
 const { initializeApp } = require("firebase-admin/app");
@@ -1151,6 +1150,7 @@ exports.getAccountState = onCall(
       limit,
     );
     const userData = userSnap.data() || {};
+    await syncUserEmailDirectory(uid, userData);
     const isPremium =
       hasExtendedAccess ||
       userData.premiumOverride === true ||
@@ -1223,37 +1223,20 @@ exports.getMyFortuneHistory = onCall(
   },
 );
 
-// Keep a human-readable email entry next to UID profile documents for Firebase
-// Console administration. The UID document remains authoritative for security,
-// authentication, history, subscriptions and email-change safety.
-exports.syncUserEmailIndex = onDocumentWritten("users/{userId}", async (event) => {
-  const before = event.data?.before;
-  const after = event.data?.after;
-  const beforeData = before?.exists ? before.data() : null;
-  const afterData = after?.exists ? after.data() : null;
-
-  if (beforeData?.recordType === "email_index" || afterData?.recordType === "email_index") {
-    return;
-  }
-
-  const oldId = emailIndexDocumentId(beforeData?.email);
-  const newId = emailIndexDocumentId(afterData?.email);
-  const uid = String(afterData?.uid || beforeData?.uid || event.params.userId || "");
-
-  if (oldId && oldId !== newId) {
-    await db.doc(`users/${oldId}`).delete();
-  }
-  if (!afterData || !newId || !uid) return;
-
-  await db.doc(`users/${newId}`).set({
-    recordType: "email_index",
+// Keep a human-readable directory separate from authoritative UID profiles.
+// This is called from authenticated account-state requests and admin backfills,
+// avoiding a dedicated Eventarc/PubSub trigger for every profile write.
+async function syncUserEmailDirectory(uid, userData = {}) {
+  const emailId = emailIndexDocumentId(userData.email);
+  if (!uid || !emailId) return;
+  await db.doc(`user_directory/${emailId}`).set({
     uid,
-    email: String(afterData.email || "").trim().toLowerCase(),
-    displayName: String(afterData.displayName || "").slice(0, 80),
+    email: String(userData.email || "").trim().toLowerCase(),
+    displayName: String(userData.displayName || "").slice(0, 80),
     sourceProfilePath: `users/${uid}`,
     updatedAt: FieldValue.serverTimestamp(),
-  });
-});
+  }, { merge: true });
+}
 
 const legacyGenerateFortune = onCall(
   {
@@ -1980,7 +1963,135 @@ async function deleteUserData(uid) {
       });
     }),
   ]);
+
+  const directoryEntries = await db
+    .collection("user_directory")
+    .where("uid", "==", uid)
+    .get();
+  await Promise.all(directoryEntries.docs.map((item) => item.ref.delete()));
 }
+
+function publicUserRecord(authUser, profile = {}) {
+  const createdAt = profile.createdAt || authUser?.metadata?.creationTime || "";
+  const lastLogin = profile.lastLogin || authUser?.metadata?.lastSignInTime || "";
+  const isPremium =
+    authUser?.customClaims?.admin === true ||
+    authUser?.customClaims?.storeReviewer === true ||
+    profile.premiumOverride === true ||
+    profile.isPremium === true ||
+    profile.membershipTier === "premium";
+  return {
+    uid: String(authUser?.uid || profile.uid || ""),
+    email: String(authUser?.email || profile.email || "").slice(0, 254),
+    displayName: String(authUser?.displayName || profile.displayName || "").slice(0, 80),
+    photoURL: String(authUser?.photoURL || profile.photoURL || "").slice(0, 1000),
+    authProvider: String(
+      authUser?.providerData?.map((item) => item.providerId).filter(Boolean).join(",") ||
+      profile.authProvider ||
+      "",
+    ).slice(0, 80),
+    emailVerified: authUser?.emailVerified === true || profile.emailVerified === true,
+    isAnonymous: !authUser?.email && !authUser?.providerData?.length,
+    isAdmin: authUser?.customClaims?.admin === true,
+    isPremium,
+    membershipTier: isPremium ? "premium" : "free",
+    premiumSource: String(profile.premiumSource || "none").slice(0, 40),
+    createdAt: String(createdAt || "").slice(0, 40),
+    lastLogin: String(lastLogin || "").slice(0, 40),
+  };
+}
+
+exports.adminListUsers = onCall(
+  { cors: true, enforceAppCheck: false, timeoutSeconds: 60 },
+  async (request) => {
+    requireAdmin(request);
+
+    const authUsers = [];
+    let pageToken;
+    do {
+      const page = await getAuth().listUsers(1000, pageToken);
+      authUsers.push(...page.users);
+      pageToken = page.pageToken;
+    } while (pageToken && authUsers.length < 10000);
+
+    const profileSnapshot = await db.collection("users").get();
+    const profiles = new Map();
+    const legacyIndexRefs = [];
+    for (const item of profileSnapshot.docs) {
+      const data = item.data() || {};
+      if (data.recordType === "email_index") {
+        legacyIndexRefs.push(item.ref);
+        continue;
+      }
+      const uid = String(data.uid || item.id);
+      if (uid === item.id) profiles.set(uid, data);
+    }
+
+    const users = authUsers.map((authUser) =>
+      publicUserRecord(authUser, profiles.get(authUser.uid) || {}));
+    const knownUids = new Set(users.map((item) => item.uid));
+    for (const [uid, profile] of profiles) {
+      if (!knownUids.has(uid)) users.push(publicUserRecord(null, profile));
+    }
+
+    // Backfill the readable directory for existing accounts and clean up the
+    // former users/{email} console indexes opportunistically.
+    const directoryUsers = users.filter((item) => emailIndexDocumentId(item.email));
+    for (let offset = 0; offset < directoryUsers.length; offset += 400) {
+      const batch = db.batch();
+      for (const user of directoryUsers.slice(offset, offset + 400)) {
+        batch.set(
+          db.doc(`user_directory/${emailIndexDocumentId(user.email)}`),
+          {
+            uid: user.uid,
+            email: user.email.toLowerCase(),
+            displayName: user.displayName,
+            sourceProfilePath: `users/${user.uid}`,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+      }
+      await batch.commit();
+    }
+    await Promise.all(legacyIndexRefs.map((ref) => ref.delete()));
+
+    users.sort((a, b) =>
+      String(b.lastLogin || b.createdAt).localeCompare(String(a.lastLogin || a.createdAt)));
+    return { success: true, users };
+  },
+);
+
+exports.adminUpdateAppSettings = onCall(
+  { cors: true, enforceAppCheck: false },
+  async (request) => {
+    const adminUid = requireAdmin(request);
+    const freeDailyLimit = Math.min(
+      Math.max(Math.trunc(Number(request.data?.freeDailyLimit) || 1), 1),
+      20,
+    );
+    const premiumDailyLimit = Math.min(
+      Math.max(Math.trunc(Number(request.data?.premiumDailyLimit) || 5), 1),
+      50,
+    );
+    const payload = {
+      instagramHandle: String(request.data?.instagramHandle || "@fortunecookie.ai")
+        .trim().slice(0, 80),
+      appName: String(request.data?.appName || "Fortune Cookie AI")
+        .trim().slice(0, 80),
+      freeDailyLimit,
+      premiumDailyLimit,
+      updatedBy: adminUid,
+      updatedAt: FieldValue.serverTimestamp(),
+      configVersion: Date.now(),
+    };
+    await db.doc("settings/app_config").set(payload, { merge: true });
+    return {
+      success: true,
+      settings: { ...payload, updatedAt: new Date().toISOString() },
+    };
+  },
+);
 
 exports.adminSetPremium = onCall(
   {

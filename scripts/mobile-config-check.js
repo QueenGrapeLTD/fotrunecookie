@@ -3,6 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 const expectedAppId = 'com.fortunecookieai.app';
+const expectedFirebaseProject = 'fortunecookieai-prod';
 const root = process.cwd();
 const errors = [];
 
@@ -45,15 +46,25 @@ if (androidFirebase) {
         `Firebase Console'da ${expectedAppId} Android uygulamasını ekleyip dosyayı yeniden indirin.`,
       );
     }
+    if (parsed.project_info?.project_id !== expectedFirebaseProject) {
+      errors.push(
+        `${androidFirebasePath} ${expectedFirebaseProject} projesine ait değil.`,
+      );
+    }
   } catch {
     errors.push(`${androidFirebasePath} geçerli JSON değil.`);
   }
 }
 
-for (const iosFirebasePath of [
+const iosFirebaseCandidates = [
   'ios/App/App/GoogleService-Info.plist',
   'ios/App/GoogleService-Info.plist',
-]) {
+];
+const iosFirebasePath = iosFirebaseCandidates.find((candidate) =>
+  fs.existsSync(path.join(root, candidate)));
+if (!iosFirebasePath) {
+  errors.push('iOS GoogleService-Info.plist bulunamadı.');
+} else {
   const iosFirebase = read(iosFirebasePath);
   if (
     iosFirebase &&
@@ -64,6 +75,13 @@ for (const iosFirebasePath of [
       `${iosFirebasePath} eski Bundle ID'ye ait. Firebase Console'da ${expectedAppId} iOS ` +
       'uygulamasını ekleyip GoogleService-Info.plist dosyasını yeniden indirin.',
     );
+  }
+  if (
+    iosFirebase &&
+    !new RegExp(`<key>PROJECT_ID</key>\\s*<string>${expectedFirebaseProject}</string>`)
+      .test(iosFirebase)
+  ) {
+    errors.push(`${iosFirebasePath} ${expectedFirebaseProject} projesine ait değil.`);
   }
 }
 

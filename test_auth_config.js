@@ -90,6 +90,10 @@ test('admin mutations are validated by callable server operations', () => {
   assert.match(functionsSource, /targetUser\?\.customClaims\?\.admin === true/);
   assert.match(functionsSource, /deleteUserData\(uid\)/);
   assert.match(functionsSource, /exports\.adminGetUserHistory = onCall/);
+  assert.match(functionsSource, /exports\.adminListUsers = onCall/);
+  assert.match(functionsSource, /exports\.adminUpdateAppSettings = onCall/);
+  assert.match(authSource, /callAdminFunction\("adminListUsers"\)/);
+  assert.match(authSource, /callAdminFunction\("adminUpdateAppSettings"/);
 });
 
 test('server settings and trusted history are authoritative', () => {
@@ -98,9 +102,16 @@ test('server settings and trusted history are authoritative', () => {
   assert.match(functionsSource, /users\/\$\{uid\}\/fortunes\/\$\{requestId\}/);
   assert.match(authSource, /fortuneItem\?\.requestId/);
   assert.match(authSource, /getMyFortuneHistory/);
-  assert.match(functionsSource, /exports\.syncUserEmailIndex = onDocumentWritten/);
-  assert.match(authSource, /recordType === "email_index"/);
+  assert.match(functionsSource, /async function syncUserEmailDirectory/);
+  assert.match(functionsSource, /user_directory\/\$\{emailId\}/);
+  assert.match(functionsSource, /await syncUserEmailDirectory\(uid, userData\)/);
+  assert.doesNotMatch(functionsSource, /onDocumentWritten/);
   assert.match(html, /id="label-profile-sun"/);
+});
+
+test('all runtime Firebase clients are locked to the production project', () => {
+  assert.match(authSource, /EXPECTED_FIREBASE_PROJECT_ID = "fortunecookieai-prod"/);
+  assert.doesNotMatch(authSource, /atonumus-fortunecookie/);
 });
 
 test('Google and Apple sign-in controls are enabled provider buttons', () => {

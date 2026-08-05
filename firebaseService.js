@@ -53,6 +53,14 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
+const EXPECTED_FIREBASE_PROJECT_ID = "fortunecookieai-prod";
+if (firebaseConfig.projectId !== EXPECTED_FIREBASE_PROJECT_ID) {
+  throw new Error(
+    `Yanlış Firebase projesi: ${firebaseConfig.projectId || "tanımsız"}. ` +
+    `Beklenen proje: ${EXPECTED_FIREBASE_PROJECT_ID}.`,
+  );
+}
+
 const requiredConfig = ["apiKey", "authDomain", "projectId", "appId"];
 for (const key of requiredConfig) {
   if (!firebaseConfig[key]) {
@@ -1067,36 +1075,15 @@ export async function currentUserIsAdmin() {
 }
 
 export async function getAllUsersFromFirestore() {
-  const querySnapshot = await getDocs(collection(db, "users"));
-  const users = [];
+  const data = await callAdminFunction("adminListUsers");
+  return Array.isArray(data?.users)
+    ? data.users.map((user) => ({ ...user, fortuneHistory: [] }))
+    : [];
+}
 
-  for (const userDoc of querySnapshot.docs) {
-    const userData = userDoc.data();
-    // Email-named documents are console-friendly indexes, not a second user.
-    if (userData?.recordType === "email_index") continue;
-    const fortunesSnapshot = await getDocs(
-      collection(db, "users", userDoc.id, "fortunes"),
-    );
-    let fortuneHistory = fortunesSnapshot.docs.map((item) => ({
-      id: item.id,
-      ...item.data(),
-    }));
-    try {
-      const callable = httpsCallable(functions, "adminGetUserHistory");
-      const result = await callable({ uid: userDoc.id });
-      if (Array.isArray(result?.data?.items)) {
-        fortuneHistory = result.data.items;
-      }
-    } catch (error) {
-      console.warn("Admin user history fallback failed:", error?.code);
-    }
-    users.push({
-      uid: userDoc.id,
-      ...userData,
-      fortuneHistory,
-    });
-  }
-  return users;
+export async function getUserHistoryForAdmin(uid) {
+  const data = await callAdminFunction("adminGetUserHistory", { uid });
+  return Array.isArray(data?.items) ? data.items : [];
 }
 
 export async function toggleUserPremiumStatusInCloud(uid, isPremium) {
@@ -1131,24 +1118,11 @@ export async function deleteMyAccountFromCloud() {
 }
 
 export async function getAppSettingsFromCloud() {
-  const cloudSettingsFlag = import.meta.env.VITE_CLOUD_SETTINGS_ENABLED;
-  const cloudSettingsEnabled =
-    cloudSettingsFlag === "true" ||
-    (cloudSettingsFlag !== "false" && !import.meta.env.DEV);
-  if (!cloudSettingsEnabled) {
-    return {
-      instagramHandle: "@fortunecookie.ai",
-      appName: "Fortune Cookie AI",
-      freeDailyLimit: 1,
-      premiumDailyLimit: 5,
-    };
-  }
-
   const cachedSettings = readLocalCache("app-settings", APP_SETTINGS_CACHE_MS);
   if (cachedSettings) return cachedSettings;
 
   try {
-    const docSnap = await getDoc(doc(db, "settings", "app_config"));
+    const docSnap = await getDocFromServer(doc(db, "settings", "app_config"));
     if (docSnap.exists()) {
       const settings = docSnap.data();
       writeLocalCache("app-settings", settings);
@@ -1166,7 +1140,6 @@ export async function getAppSettingsFromCloud() {
 }
 
 export async function saveAppSettingsToCloud(settings) {
-  if (!(await currentUserIsAdmin())) return false;
   const payload = {
     instagramHandle: cleanString(settings.instagramHandle, 80),
     appName: cleanString(settings.appName, 80),
@@ -1175,14 +1148,11 @@ export async function saveAppSettingsToCloud(settings) {
       Math.max(Number(settings.premiumDailyLimit) || 5, 1),
       50,
     ),
-    updatedAt: new Date().toISOString(),
   };
-  await setDoc(
-    doc(db, "settings", "app_config"),
-    payload,
-    { merge: true },
-  );
-  writeLocalCache("app-settings", payload);
+  const result = await callAdminFunction("adminUpdateAppSettings", payload);
+  if (result?.success !== true) return false;
+  const savedSettings = result.settings || payload;
+  writeLocalCache("app-settings", savedSettings);
   return true;
 }
 
