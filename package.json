@@ -10,6 +10,7 @@
     "predeploy:check": "node scripts/predeploy-check.js && npm test && npm --prefix functions test && npm run build",
     "mobile:check": "node scripts/mobile-config-check.js",
     "appstore:check": "node scripts/app-store-check.js",
+    "admob:functions-env": "node scripts/sync-admob-function-env.js",
     "android:signing:init": "node scripts/generate-android-upload-key.js",
     "preview": "vite preview",
     "cap:add:android": "cap add android",

@@ -48,15 +48,19 @@ test('native Google and Apple providers bridge into Firebase Auth', () => {
     capacitorConfig.plugins.FirebaseAuthentication.providers,
     ['google.com', 'apple.com'],
   );
-  assert.equal(capacitorConfig.plugins.FirebaseAuthentication.skipNativeAuth, true);
-  assert.match(authSource, /signInWithCredential/);
+  assert.equal(capacitorConfig.plugins.FirebaseAuthentication.skipNativeAuth, false);
+  assert.match(authSource, /signInWithCustomToken/);
+  assert.match(authSource, /FirebaseAuthentication\.getIdToken/);
+  assert.match(authSource, /httpsCallable\(\s*functions,\s*"exchangeNativeAuthToken"/);
+  assert.match(authSource, /nativeIdToken:\s*tokenResult\.token/);
+  assert.match(authSource, /result\.user\.uid !== nativeUid/);
   assert.match(authSource, /useCredentialManager:\s*true/);
   assert.match(authSource, /isRetryableGoogleNetworkError/);
   assert.match(authSource, /attempt < 2/);
   assert.match(authSource, /auth\/network-request-failed/);
   assert.match(authSource, /Credential Manager compatibility failure; trying legacy Google Sign-In/);
   assert.match(authSource, /useCredentialManager:\s*false/);
-  assert.match(authSource, /skipNativeAuth:\s*true/);
+  assert.match(authSource, /skipNativeAuth:\s*false/);
   assert.match(authSource, /preserveNativeAppleDisplayName/);
   assert.match(authSource, /nativeResult\?\.user\?\.displayName/);
   assert.match(authSource, /auth\/native-google-failed/);
@@ -67,16 +71,14 @@ test('native Google and Apple providers bridge into Firebase Auth', () => {
   );
   assert.ok(
     nativeSignInSource.indexOf('FirebaseAuthentication.signInWithApple') <
-      nativeSignInSource.indexOf('waitForAuthPersistenceAfterNativeCredential'),
+      nativeSignInSource.indexOf('bridgeNativeSessionIntoWebView'),
   );
   assert.ok(
     nativeSignInSource.indexOf('requestNativeGoogleCredential()') <
-      nativeSignInSource.indexOf('waitForAuthPersistenceAfterNativeCredential'),
+      nativeSignInSource.indexOf('bridgeNativeSessionIntoWebView'),
   );
-  assert.doesNotMatch(
-    authSource,
-    /GoogleAuthProvider\.credential\(\s*nativeCredential\.idToken,\s*nativeCredential\.accessToken/,
-  );
+  assert.doesNotMatch(authSource, /GoogleAuthProvider\.credential\(/);
+  assert.match(authSource, /FirebaseAuthentication\.signOut/);
 });
 
 test('iOS target is entitled and configured for Sign in with Apple', () => {
@@ -84,7 +86,7 @@ test('iOS target is entitled and configured for Sign in with Apple', () => {
   assert.match(iosEntitlements, /<string>Default<\/string>/);
   assert.match(xcodeProject, /CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements/);
   assert.match(xcodeProject, /com\.apple\.SignInWithApple/);
-  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 6/);
+  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 7/);
   assert.match(xcodeProject, /TARGETED_DEVICE_FAMILY = "1,2"/);
 });
 
@@ -126,7 +128,8 @@ test('mobile sessions restore locally before creating a new anonymous user', () 
 test('returning social users do not leave orphan anonymous Auth accounts', () => {
   assert.match(authSource, /const anonymousUser = auth\.currentUser/);
   assert.match(authSource, /deleteUser\(anonymousUser\)/);
-  assert.match(authSource, /auth\/credential-already-in-use/);
+  assert.match(authSource, /Anonymous account cleanup/);
+  assert.match(authSource, /signInWithCustomToken\(auth, customToken\)/);
 });
 
 test('admin premium overrides survive RevenueCat synchronization', () => {

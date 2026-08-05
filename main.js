@@ -2628,6 +2628,13 @@ function setupEventListeners() {
           showToast(t('adCreditGranted'));
         } else if (rewardResult.verified) {
           showToast(t('adVerifiedProgress', progress));
+        } else if (rewardResult.pending) {
+          showToast(t('adVerificationPending'));
+          for (const delay of [6000, 18000]) {
+            window.setTimeout(() => {
+              void updateAdStatusUI(true);
+            }, delay);
+          }
         } else {
           showToast(t('adUnavailable'));
         }

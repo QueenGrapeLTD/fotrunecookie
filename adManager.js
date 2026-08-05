@@ -19,6 +19,10 @@ class AdManager {
   constructor() {
     this.ready = false;
     this.rewarded = false;
+    this.loaded = false;
+    this.listenersReady = false;
+    this.listenerHandles = [];
+    this.lastFailure = null;
     this.initPromise = null;
     this.refreshPromise = null;
     this.lastRefreshAt = 0;
@@ -39,6 +43,31 @@ class AdManager {
       : import.meta.env.VITE_ADMOB_ANDROID_REWARDED_AD_UNIT_ID || "";
   }
 
+  async registerRewardListeners() {
+    if (this.listenersReady) return;
+    this.listenerHandles = await Promise.all([
+      AdMob.addListener(RewardAdPluginEvents.Loaded, () => {
+        this.loaded = true;
+        this.lastFailure = null;
+      }),
+      AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
+        this.rewarded = true;
+      }),
+      AdMob.addListener(RewardAdPluginEvents.FailedToLoad, (error) => {
+        this.loaded = false;
+        this.lastFailure = error;
+      }),
+      AdMob.addListener(RewardAdPluginEvents.FailedToShow, (error) => {
+        this.loaded = false;
+        this.lastFailure = error;
+      }),
+      AdMob.addListener(RewardAdPluginEvents.Dismissed, () => {
+        this.loaded = false;
+      }),
+    ]);
+    this.listenersReady = true;
+  }
+
   async init() {
     if (!Capacitor.isNativePlatform() || !this.getAdId() || this.ready) return;
     if (this.initPromise) return this.initPromise;
@@ -50,6 +79,7 @@ class AdManager {
           tagForChildDirectedTreatment: false,
           tagForUnderAgeOfConsent: false,
         });
+        await this.registerRewardListeners();
         if (Capacitor.getPlatform() === "ios") {
           const tracking = await AdMob.trackingAuthorizationStatus().catch(
             () => null,
@@ -62,11 +92,9 @@ class AdManager {
         if (consent?.isConsentFormAvailable && consent?.status === "REQUIRED") {
           await AdMob.showConsentForm().catch(() => null);
         }
-        await AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
-          this.rewarded = true;
-        });
         this.ready = true;
       } catch (error) {
+        this.lastFailure = error;
         console.warn("AdMob initialization failed:", error?.message);
       } finally {
         if (!this.ready) this.initPromise = null;
@@ -132,6 +160,45 @@ class AdManager {
     return this.getPremiumQueries() > 0;
   }
 
+  async prepareRewardedAd(uid) {
+    let lastError = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        this.loaded = false;
+        this.lastFailure = null;
+        await AdMob.prepareRewardVideoAd({
+          adId: this.getAdId(),
+          isTesting: import.meta.env.DEV,
+          ssv: { userId: uid },
+        });
+        this.loaded = true;
+        return;
+      } catch (error) {
+        lastError = error;
+        this.lastFailure = error;
+        if (attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+        }
+      }
+    }
+    throw lastError || new Error("admob/rewarded-load-failed");
+  }
+
+  async waitForVerifiedReward(previousCredits, previousRewardedToday) {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      await this.refresh(true);
+      const creditGranted = this.getPremiumQueries() > previousCredits;
+      const adVerified =
+        Math.max(Number(this.state.rewardedToday) || 0, 0) >
+        previousRewardedToday;
+      if (adVerified || creditGranted) {
+        return { verified: true, creditGranted, pending: false };
+      }
+    }
+    return { verified: false, creditGranted: false, pending: true };
+  }
+
   async showRewardedAdModal(onAdCompleted) {
     if (!this.isAvailable()) {
       const result = { verified: false, creditGranted: false };
@@ -155,38 +222,33 @@ class AdManager {
         Number(this.state.rewardedToday) || 0,
         0,
       );
-      await AdMob.prepareRewardVideoAd({
-        adId: this.getAdId(),
-        isTesting: import.meta.env.DEV,
-        ssv: { userId: uid },
-      });
-      await AdMob.showRewardVideoAd();
-      if (!this.rewarded) {
+      await this.prepareRewardedAd(uid);
+      const rewardItem = await AdMob.showRewardVideoAd();
+      this.loaded = false;
+      const sdkConfirmedReward =
+        this.rewarded || Math.max(Number(rewardItem?.amount) || 0, 0) > 0;
+      if (!sdkConfirmedReward) {
         const result = { verified: false, creditGranted: false };
         if (onAdCompleted) onAdCompleted(result);
         return result;
       }
 
       // Production rewards are granted only after AdMob's verified SSV callback.
-      for (let attempt = 0; attempt < 8; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-        await this.refresh(true);
-        const creditGranted = this.getPremiumQueries() > previousCredits;
-        const adVerified =
-          Math.max(Number(this.state.rewardedToday) || 0, 0) >
-          previousRewardedToday;
-        if (adVerified || creditGranted) {
-          const result = { verified: true, creditGranted };
-          if (onAdCompleted) onAdCompleted(result);
-          return result;
-        }
-      }
-      const result = { verified: false, creditGranted: false };
+      const result = await this.waitForVerifiedReward(
+        previousCredits,
+        previousRewardedToday,
+      );
       if (onAdCompleted) onAdCompleted(result);
       return result;
     } catch (error) {
+      this.lastFailure = error;
       console.warn("Rewarded ad failed:", error?.message);
-      const result = { verified: false, creditGranted: false };
+      const result = {
+        verified: false,
+        creditGranted: false,
+        pending: false,
+        errorCode: error?.code || error?.message || "admob/rewarded-failed",
+      };
       if (onAdCompleted) onAdCompleted(result);
       return result;
     }

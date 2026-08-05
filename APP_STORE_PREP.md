@@ -6,7 +6,7 @@
 - Bundle ID: com.fortunecookieai.app
 - iOS deployment target: 15.0
 - Marketing version: 1.0
-- Build number: 1
+- Build number: 7
 
 ## Local validation
 
@@ -15,6 +15,7 @@ Run these before creating an archive:
 ```sh
 npm ci
 npm --prefix functions ci
+npm run admob:functions-env
 npm test
 npm --prefix functions test
 npm run build
@@ -31,8 +32,10 @@ xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Release
 - Create the App Store Connect app record for `Fortune Cookie AI`.
 - Add the iOS app with bundle id `com.fortunecookieai.app` in Firebase and replace `ios/App/App/GoogleService-Info.plist`.
 - Configure Sign in with Apple and Google sign-in for the same Firebase iOS app.
-- Replace the iOS AdMob app id in `ios/App/App/Info.plist`; the current value is Google's sample id.
-- Set production `.env` values, especially Firebase, RevenueCat, and iOS AdMob rewarded ad unit values.
+- Keep the production AdMob app id in `ios/App/App/Info.plist` aligned with the iOS app in AdMob.
+- Set production `.env` values, especially Firebase, RevenueCat, and both rewarded ad unit values.
+- Run `npm run admob:functions-env` before deploying `adMobRewardCallback`.
+- Configure both rewarded ad units to use `https://us-central1-fortunecookieai-prod.cloudfunctions.net/adMobRewardCallback` for server-side verification.
 - Complete App Store privacy details and confirm whether App Tracking Transparency is needed for ads.
 - Verify required-reason API privacy manifest requirements against the final archive before upload.
 

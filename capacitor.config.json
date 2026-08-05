@@ -11,7 +11,7 @@
       "backgroundColor": "#FFFBEB"
     },
     "FirebaseAuthentication": {
-      "skipNativeAuth": true,
+      "skipNativeAuth": false,
       "providers": [
         "google.com",
         "apple.com"

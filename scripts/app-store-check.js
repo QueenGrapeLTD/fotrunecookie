@@ -52,6 +52,21 @@ for (const key of [
   requireEnv(env, key);
 }
 
+const functionsEnv = readEnv(fullPath('functions/.env'));
+const expectedRewardedAdUnits = [
+  env.VITE_ADMOB_ANDROID_REWARDED_AD_UNIT_ID,
+  env.VITE_ADMOB_IOS_REWARDED_AD_UNIT_ID,
+].filter(Boolean).join(',');
+if (!functionsEnv.ADMOB_REWARDED_AD_UNIT_IDS) {
+  errors.push(
+    'functions/.env içinde ADMOB_REWARDED_AD_UNIT_IDS eksik; npm run admob:functions-env çalıştırın.',
+  );
+} else if (functionsEnv.ADMOB_REWARDED_AD_UNIT_IDS !== expectedRewardedAdUnits) {
+  errors.push(
+    'functions/.env reklam birimleri kök .env ile eşleşmiyor; npm run admob:functions-env çalıştırın.',
+  );
+}
+
 if ((env.VITE_REVENUECAT_IOS_API_KEY || '').startsWith('test_')) {
   errors.push('VITE_REVENUECAT_IOS_API_KEY test anahtarı olamaz.');
 }
