@@ -1,0 +1,70 @@
+{
+  "project_info": {
+    "project_number": "53381061591",
+    "project_id": "fortunecookieai-prod",
+    "storage_bucket": "fortunecookieai-prod.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:53381061591:android:17c8ce7617e30758d04992",
+        "android_client_info": {
+          "package_name": "com.fortunecookieai.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "53381061591-mae9r6dpqqkdruqls85vboolrde6rlas.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fortunecookieai.app",
+            "certificate_hash": "75cc1ae80da2624cb83460ad932f732bb5d8b2b4"
+          }
+        },
+        {
+          "client_id": "53381061591-n8cvl0qo1uk7540dc389r1gp1rlfge68.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fortunecookieai.app",
+            "certificate_hash": "8d6cd78db82b868a64e099d795982977a8ba0186"
+          }
+        },
+        {
+          "client_id": "53381061591-olgsjvd6hvtdkd889odi4j4ta2cn0114.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fortunecookieai.app",
+            "certificate_hash": "6e49aa318a0223dd81b3608ca9670e2a763ccbea"
+          }
+        },
+        {
+          "client_id": "53381061591-4ich0juilehq73pgd0bl0nvas1td4b22.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAIHp-L7HJ2bC2IrAH-n8tVNSYg0k0Q8GA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "53381061591-4ich0juilehq73pgd0bl0nvas1td4b22.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "53381061591-accq99elb2ci68nuq6j523m9pg51do58.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.atonomus-fortunecookie.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

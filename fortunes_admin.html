@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fortune Content Database - Admin Panel</title>
+  <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <style>
+    html:not(.admin-authorized):not(.admin-auth-screen) body { visibility: hidden; }
+    html.admin-auth-screen body, html.admin-authorized body { visibility: visible; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: #F9FAFB;
+      color: #1F2937;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .admin-container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .admin-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #FFFFFF;
+      padding: 18px 24px;
+      border-radius: 16px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.04);
+      border: 1px solid #E5E7EB;
+      margin-bottom: 24px;
+    }
+    .admin-title {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: #C2410C;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .admin-nav-tabs {
+      display: flex;
+      gap: 10px;
+    }
+    .nav-tab {
+      background: #F3F4F6;
+      color: #4B5563;
+      padding: 8px 16px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.88rem;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      border: 1px solid #E5E7EB;
+      cursor: pointer;
+    }
+    .nav-tab:hover, .nav-tab.active {
+      background: linear-gradient(135deg, #FF8A00, #E65100);
+      color: #FFFFFF;
+      border-color: transparent;
+      box-shadow: 0 4px 12px rgba(230,81,0,0.25);
+    }
+    
+    .admin-grid {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 24px;
+    }
+    .panel-card {
+      background: #FFFFFF;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.04);
+      border: 1px solid #E5E7EB;
+      margin-bottom: 24px;
+    }
+    .card-title-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+    .card-title-bar h3 { font-size: 1.15rem; font-weight: 800; color: #111827; }
+
+    .filter-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .filter-select, .search-input {
+      padding: 9px 12px;
+      border-radius: 10px;
+      border: 1px solid #D1D5DB;
+      font-family: inherit;
+      font-weight: 600;
+      font-size: 0.88rem;
+      outline: none;
+    }
+    .search-input { flex: 1; }
+    .filter-select:focus, .search-input:focus { border-color: #F59E0B; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15); }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .data-table th, .data-table td {
+      padding: 12px 14px;
+      text-align: left;
+      border-bottom: 1px solid #F3F4F6;
+      font-size: 0.88rem;
+    }
+    .data-table th { background: #F9FAFB; font-weight: 700; color: #4B5563; }
+    
+    .btn-action-del {
+      border: none;
+      background: #FEE2E2;
+      color: #DC2626;
+      padding: 5px 10px;
+      border-radius: 8px;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 0.78rem;
+    }
+
+    .form-group { margin-bottom: 14px; }
+    .form-label { display: block; font-size: 0.78rem; font-weight: 700; color: #4B5563; margin-bottom: 4px; text-transform: uppercase; }
+    .form-control {
+      width: 100%;
+      padding: 9px 12px;
+      border-radius: 10px;
+      border: 1px solid #D1D5DB;
+      font-family: inherit;
+      font-size: 0.88rem;
+      outline: none;
+    }
+    textarea.form-control { resize: vertical; min-height: 80px; }
+
+    .btn-submit {
+      width: 100%;
+      background: linear-gradient(135deg, #FF8A00, #E65100);
+      color: #FFFFFF;
+      font-weight: 800;
+      padding: 10px;
+      border-radius: 12px;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(230,81,0,0.25);
+    }
+    .btn-ai {
+      background: linear-gradient(135deg, #7C3AED, #6D28D9);
+      box-shadow: 0 4px 12px rgba(124,58,237,0.3);
+    }
+
+    .toast {
+      position: fixed; bottom: 20px; right: 20px; background: #1F2937; color: #FFFFFF;
+      padding: 12px 20px; border-radius: 14px; font-weight: 700; font-size: 0.88rem;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2); z-index: 200; transition: all 0.3s ease;
+    }
+    .toast.hidden { display: none !important; }
+    .content-status {
+      display: inline-flex;
+      margin-bottom: 6px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+    .content-status-approved { background: #dcfae6; color: #067647; }
+    .content-status-draft { background: #fef0c7; color: #b54708; }
+    .content-status-rejected { background: #fee4e2; color: #b42318; }
+    .quality-select {
+      display: block;
+      min-width: 76px;
+      border: 1px solid rgba(84, 69, 58, 0.18);
+      border-radius: 8px;
+      padding: 4px 7px;
+      background: rgba(255,255,255,.8);
+    }
+    .content-action {
+      border: 1px solid rgba(20, 184, 166, .3);
+      border-radius: 8px;
+      background: rgba(204, 251, 241, .65);
+      color: #0f766e;
+      padding: 5px 8px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="admin-container">
+    
+    <!-- Top Header & Tabs -->
+    <header class="admin-header">
+      <div class="admin-title">
+        🥠 <span>Fortune Content Database Manager</span>
+      </div>
+      <nav class="admin-nav-tabs">
+        <a href="./admin.html" class="nav-tab">👥 Kullanıcı Yönetimi</a>
+        <a href="./fortunes_admin.html" class="nav-tab active">🥠 Fal İçerik Veritabanı</a>
+        <a href="./index.html" class="nav-tab" target="_blank" rel="noopener noreferrer">🌐 Ana Uygulamayı Aç</a>
+      </nav>
+    </header>
+
+    <!-- Main Grid -->
+    <div class="admin-grid">
+      
+      <!-- Fortunes Database Table -->
+      <div class="panel-card">
+        <div class="card-title-bar">
+          <h3>📚 Fal İçerik Kütüphanesi</h3>
+          <span id="total-count-badge" style="font-size:0.85rem; font-weight:700; background:#FFFBEB; color:#B45309; padding:4px 10px; border-radius:12px; border:1px solid #FDE68A;">0 Fal</span>
+        </div>
+
+        <div class="filter-bar">
+          <select id="filter-lang" class="filter-select">
+            <option value="tr">🇹🇷 Türkçe (500)</option>
+            <option value="en">🇬🇧 English (500)</option>
+            <option value="de">🇩🇪 Deutsch (500)</option>
+            <option value="fr">🇫🇷 Français (500)</option>
+            <option value="es">🇪🇸 Español (500)</option>
+            <option value="it">🇮🇹 Italiano (500)</option>
+            <option value="el">🇬🇷 Ελληνικά (500)</option>
+            <option value="zh">🇨🇳 中文 (500)</option>
+            <option value="ja">🇯🇵 日本語 (500)</option>
+            <option value="ko">🇰🇷 한국어 (500)</option>
+          </select>
+
+          <select id="filter-cat" class="filter-select">
+            <option value="general">🌟 Genel Hikmet</option>
+            <option value="love">💖 Aşk & Gönül</option>
+            <option value="career">💼 Başarı & Bereket</option>
+            <option value="health">🌿 Huzur & Şifa</option>
+          </select>
+
+          <input type="text" id="search-fortune-input" class="search-input" placeholder="🔍 Metin ara..." />
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 50px;">#</th>
+                <th>Fal Cümlesi</th>
+                <th style="width: 110px;">Kategori</th>
+                <th style="width: 70px;">Sil</th>
+              </tr>
+            </thead>
+            <tbody id="fortunes-table-body">
+              <tr><td colspan="4" style="text-align:center; padding:20px; color:#9CA3AF;">Yükleniyor...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Export & Reset Tools -->
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+          <button id="btn-export-json" class="btn-action-del" style="background:#EFF6FF; color:#1D4ED8; flex:1; padding:8px;">📥 Veritabanını JSON Olarak İndir</button>
+          <button id="btn-reset-default" class="btn-action-del" style="flex:1; padding:8px;">🔄 Varsayılana Sıfırla</button>
+        </div>
+      </div>
+
+      <!-- Sidebar: Add & AI Generator -->
+      <div>
+        
+        <!-- Manual Add Form -->
+        <div class="panel-card">
+          <div class="card-title-bar">
+            <h3>✍️ Manuel Fal Ekle</h3>
+          </div>
+          <form id="form-manual-add">
+            <div class="form-group">
+              <label class="form-label">Dil:</label>
+              <select id="add-lang" class="form-control">
+                <option value="tr">🇹🇷 Türkçe</option>
+                <option value="en">🇬🇧 English</option>
+                <option value="de">🇩🇪 Deutsch</option>
+                <option value="fr">🇫🇷 Français</option>
+                <option value="es">🇪🇸 Español</option>
+                <option value="it">🇮🇹 Italiano</option>
+                <option value="el">🇬🇷 Ελληνικά</option>
+                <option value="zh">🇨🇳 中文</option>
+                <option value="ja">🇯🇵 日本語</option>
+                <option value="ko">🇰🇷 한국어</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Kategori:</label>
+              <select id="add-cat" class="form-control">
+                <option value="general">🌟 Genel Hikmet</option>
+                <option value="love">💖 Aşk & Gönül</option>
+                <option value="career">💼 Başarı & Bereket</option>
+                <option value="health">🌿 Huzur & Şifa</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Fal Cümlesi:</label>
+              <textarea id="add-text" class="form-control" placeholder="Örn: Sabırla dikilen tohum, hiç beklemediğin anda en tatlı meyvesini verir." required></textarea>
+            </div>
+            <button type="submit" class="btn-submit">➕ Falı Veritabanına Ekle</button>
+          </form>
+        </div>
+
+        <!-- Gemini AI Bulk Generator Form -->
+        <div class="panel-card">
+          <div class="card-title-bar">
+            <h3>⚡ Gemini AI Toplu Fal Üretici</h3>
+          </div>
+          <form id="form-ai-gen">
+            <div class="form-group">
+              <label class="form-label">Gemini / OpenAI API Key:</label>
+              <input type="password" id="ai-api-key" class="form-control" placeholder="AIzaSy..." required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Sağlayıcı Model:</label>
+              <select id="ai-provider" class="form-control">
+                <option value="gemini">Google Gemini 2.5 Flash</option>
+                <option value="openai">OpenAI ChatGPT (gpt-4o-mini)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Hedef Dil:</label>
+              <select id="ai-target-lang" class="form-control">
+                <option value="tr">🇹🇷 Türkçe</option>
+                <option value="en">🇬🇧 English</option>
+                <option value="de">🇩🇪 Deutsch</option>
+                <option value="fr">🇫🇷 Français</option>
+                <option value="es">🇪🇸 Español</option>
+                <option value="it">🇮🇹 Italiano</option>
+                <option value="el">🇬🇷 Ελληνικά</option>
+                <option value="zh">🇨🇳 中文</option>
+                <option value="ja">🇯🇵 日本語</option>
+                <option value="ko">🇰🇷 한국어</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Hedef Kategori:</label>
+              <select id="ai-target-cat" class="form-control">
+                <option value="general">🌟 Genel Hikmet</option>
+                <option value="love">💖 Aşk & Gönül</option>
+                <option value="career">💼 Başarı & Bereket</option>
+                <option value="health">🌿 Huzur & Şifa</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Üretilecek Fal Adedi:</label>
+              <select id="ai-count" class="form-control">
+                <option value="5">5 Adet Fal Üret</option>
+                <option value="10">10 Adet Fal Üret</option>
+                <option value="20">20 Adet Fal Üret</option>
+              </select>
+            </div>
+            <button type="submit" id="btn-ai-submit" class="btn-submit btn-ai">
+              <span id="btn-ai-text">✨ Gemini AI ile Falları Üret</span>
+            </button>
+          </form>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden">
+    <span id="toast-message"></span>
+  </div>
+
+  <script type="module" src="./fortunes_admin_logic.js"></script>
+</body>
+</html>

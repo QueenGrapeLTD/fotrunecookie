@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Fortune Cookie AI</string>
+    <string name="title_activity_main">Fortune Cookie AI</string>
+    <string name="package_name">com.fortunecookieai.app</string>
+    <string name="custom_url_scheme">com.fortunecookieai.app</string>
+    <string name="admob_app_id">ca-app-pub-1148080339435668~4944683370</string>
+</resources>
