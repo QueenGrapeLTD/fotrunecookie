@@ -13,6 +13,20 @@ const adminGuardSource = fs.readFileSync(
 );
 const adminHtml = fs.readFileSync(new URL('./admin.html', import.meta.url), 'utf8');
 const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+const styles = fs.readFileSync(new URL('./style.css', import.meta.url), 'utf8');
+const mainSource = fs.readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+const xcodeProject = fs.readFileSync(
+  new URL('./ios/App/App.xcodeproj/project.pbxproj', import.meta.url),
+  'utf8',
+);
+const iosEntitlements = fs.readFileSync(
+  new URL('./ios/App/App/App.entitlements', import.meta.url),
+  'utf8',
+);
+const iosInfoPlist = fs.readFileSync(
+  new URL('./ios/App/App/Info.plist', import.meta.url),
+  'utf8',
+);
 const capacitorConfig = JSON.parse(
   fs.readFileSync(new URL('./capacitor.config.json', import.meta.url), 'utf8'),
 );
@@ -43,11 +57,60 @@ test('native Google and Apple providers bridge into Firebase Auth', () => {
   assert.match(authSource, /Credential Manager compatibility failure; trying legacy Google Sign-In/);
   assert.match(authSource, /useCredentialManager:\s*false/);
   assert.match(authSource, /skipNativeAuth:\s*true/);
+  assert.match(authSource, /preserveNativeAppleDisplayName/);
+  assert.match(authSource, /nativeResult\?\.user\?\.displayName/);
   assert.match(authSource, /auth\/native-google-failed/);
+  assert.match(authSource, /waitForAuthPersistenceAfterNativeCredential/);
+  const nativeSignInSource = authSource.slice(
+    authSource.indexOf('async function signInNatively'),
+    authSource.indexOf('export async function signInWithGoogle'),
+  );
+  assert.ok(
+    nativeSignInSource.indexOf('FirebaseAuthentication.signInWithApple') <
+      nativeSignInSource.indexOf('waitForAuthPersistenceAfterNativeCredential'),
+  );
+  assert.ok(
+    nativeSignInSource.indexOf('requestNativeGoogleCredential()') <
+      nativeSignInSource.indexOf('waitForAuthPersistenceAfterNativeCredential'),
+  );
   assert.doesNotMatch(
     authSource,
     /GoogleAuthProvider\.credential\(\s*nativeCredential\.idToken,\s*nativeCredential\.accessToken/,
   );
+});
+
+test('iOS target is entitled and configured for Sign in with Apple', () => {
+  assert.match(iosEntitlements, /com\.apple\.developer\.applesignin/);
+  assert.match(iosEntitlements, /<string>Default<\/string>/);
+  assert.match(xcodeProject, /CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements/);
+  assert.match(xcodeProject, /com\.apple\.SignInWithApple/);
+  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 6/);
+  assert.match(xcodeProject, /TARGETED_DEVICE_FAMILY = "1,2"/);
+});
+
+test('iOS social sign-in has its native callback and recoverable button state', () => {
+  assert.match(iosInfoPlist, /<key>CFBundleURLTypes<\/key>/);
+  assert.match(iosInfoPlist, /com\.googleusercontent\.apps\.53381061591-gmsqu8nbojakstbe7l90ljvap4a28r0b/);
+  assert.match(mainSource, /Google sign-in handler failed/);
+  assert.match(mainSource, /Apple sign-in handler failed/);
+  assert.match(mainSource, /removeAttribute\('aria-busy'\)/);
+});
+
+test('iOS web layout respects notch and home indicator safe areas', () => {
+  assert.match(html, /viewport-fit=cover/);
+  assert.match(styles, /safe-area-inset-top/);
+  assert.match(styles, /safe-area-inset-bottom/);
+  assert.match(styles, /calc\(20px \+ var\(--safe-area-top\)\)/);
+  assert.match(styles, /bottom: calc\(30px \+ var\(--safe-area-bottom\)\)/);
+});
+
+test('rapid cookie taps do not trigger iOS double-tap page zoom', () => {
+  assert.match(styles, /\.cookie-wrapper\s*\{[^}]*touch-action:\s*manipulation/s);
+  assert.match(styles, /\.cookie-wrapper\s*\{[^}]*-webkit-touch-callout:\s*none/s);
+  assert.match(html, /id="cookie-interactive"/);
+  assert.match(mainSource, /event\?\.cancelable/);
+  assert.match(mainSource, /addEventListener\('dblclick'/);
+  assert.match(mainSource, /event\.preventDefault\(\)/);
 });
 
 test('mobile sessions restore locally before creating a new anonymous user', () => {
@@ -107,6 +170,15 @@ test('Google and Apple sign-in controls are enabled provider buttons', () => {
   assert.match(html, /id="btn-signin-google"/);
   assert.match(html, /id="btn-signin-apple"/);
   assert.doesNotMatch(html, /id="btn-signin-apple"[^>]*disabled/);
+});
+
+test('successful social credentials render the authenticated account without waiting for cloud sync', () => {
+  assert.match(mainSource, /function renderAuthenticatedAccount/);
+  assert.match(mainSource, /renderAuthenticatedAccount\(res\.user, \{ closeProfile: true \}\)/);
+  assert.match(mainSource, /authLoggedBox\?\.classList\.remove\('hidden'\)/);
+  assert.match(mainSource, /modalProfile\?\.classList\.add\('hidden'\)/);
+  assert.match(authSource, /Auth profile hydration timed out; rendering the signed-in user immediately/);
+  assert.match(authSource, /Anonymous account cleanup/);
 });
 
 test('email authentication requires verification and preserves anonymous registration state', () => {

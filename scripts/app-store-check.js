@@ -1,0 +1,145 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
+
+const root = process.cwd();
+const expectedAppId = 'com.fortunecookieai.app';
+const sampleAdMobPublisher = 'ca-app-pub-3940256099942544';
+const errors = [];
+const warnings = [];
+
+function fullPath(relativePath) {
+  return path.join(root, relativePath);
+}
+
+function read(relativePath) {
+  const filePath = fullPath(relativePath);
+  return fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
+}
+
+function readEnv(filePath) {
+  if (!fs.existsSync(filePath)) return {};
+  return Object.fromEntries(
+    fs.readFileSync(filePath, 'utf8')
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#') && line.includes('='))
+      .map(line => {
+        const separator = line.indexOf('=');
+        return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
+      }),
+  );
+}
+
+function plistValue(contents, key) {
+  const match = contents.match(new RegExp(`<key>${key}</key>\\s*<string>([^<]+)</string>`));
+  return match?.[1] || '';
+}
+
+function requireEnv(env, key) {
+  if (!env[key]) errors.push(`${key} .env içinde eksik.`);
+}
+
+const env = readEnv(fullPath('.env'));
+for (const key of [
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_APP_ID',
+  'VITE_REVENUECAT_IOS_API_KEY',
+  'VITE_ADMOB_IOS_REWARDED_AD_UNIT_ID',
+]) {
+  requireEnv(env, key);
+}
+
+if ((env.VITE_REVENUECAT_IOS_API_KEY || '').startsWith('test_')) {
+  errors.push('VITE_REVENUECAT_IOS_API_KEY test anahtarı olamaz.');
+}
+
+if ((env.VITE_ADMOB_IOS_REWARDED_AD_UNIT_ID || '').startsWith(sampleAdMobPublisher)) {
+  errors.push('VITE_ADMOB_IOS_REWARDED_AD_UNIT_ID Google test reklam birimi olamaz.');
+}
+
+const project = read('ios/App/App.xcodeproj/project.pbxproj');
+if (!project.includes(`PRODUCT_BUNDLE_IDENTIFIER = ${expectedAppId};`)) {
+  errors.push(`Xcode bundle id ${expectedAppId} değil.`);
+}
+if (!project.includes('DEVELOPMENT_TEAM =')) {
+  errors.push('Xcode DEVELOPMENT_TEAM ayarlı değil; Apple Developer Team seçilmeli.');
+}
+if (!project.includes('GoogleService-Info.plist in Resources')) {
+  errors.push('GoogleService-Info.plist Xcode Copy Bundle Resources fazına ekli değil.');
+}
+if (!project.includes('CODE_SIGN_ENTITLEMENTS = App/App.entitlements;')) {
+  errors.push('App.entitlements Xcode hedefinin code signing ayarına bağlı değil.');
+}
+if (!project.includes('com.apple.SignInWithApple')) {
+  errors.push('Xcode hedefinde Sign in with Apple capability etkin değil.');
+}
+const buildNumbers = [...project.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)]
+  .map((match) => Number(match[1]));
+if (!buildNumbers.length || buildNumbers.some((buildNumber) => buildNumber < 6)) {
+  errors.push('Xcode build numarası App Store için en az 6 olmalı.');
+}
+
+const entitlements = read('ios/App/App/App.entitlements');
+if (!entitlements) {
+  errors.push('ios/App/App/App.entitlements bulunamadı.');
+} else if (!entitlements.includes('<key>com.apple.developer.applesignin</key>') ||
+  !entitlements.includes('<string>Default</string>')) {
+  errors.push('App.entitlements geçerli Sign in with Apple yetkisini içermiyor.');
+}
+
+const infoPlist = read('ios/App/App/Info.plist');
+if (!infoPlist) {
+  errors.push('ios/App/App/Info.plist bulunamadı.');
+} else {
+  const admobAppId = plistValue(infoPlist, 'GADApplicationIdentifier');
+  if (!admobAppId) {
+    errors.push('Info.plist içinde GADApplicationIdentifier yok.');
+  } else if (admobAppId.startsWith(sampleAdMobPublisher)) {
+    errors.push('Info.plist içindeki GADApplicationIdentifier Google test app id kullanıyor.');
+  }
+  if (!infoPlist.includes('<key>SKAdNetworkItems</key>')) {
+    warnings.push('Info.plist içinde SKAdNetworkItems yok; AdMob gelir ölçümü için eklenmeli.');
+  }
+  if (!infoPlist.includes('<key>NSUserTrackingUsageDescription</key>')) {
+    warnings.push('Info.plist içinde NSUserTrackingUsageDescription yok; IDFA/kişiselleştirilmiş reklam istenecekse gerekli.');
+  }
+  if (!infoPlist.includes('<key>ITSAppUsesNonExemptEncryption</key>')) {
+    warnings.push('Info.plist içinde ITSAppUsesNonExemptEncryption yok; yüklenen build için ihracat uyumluluğu sorusu tekrar sorulur.');
+  }
+}
+
+const iosFirebasePath = 'ios/App/App/GoogleService-Info.plist';
+const iosFirebase = read(iosFirebasePath);
+if (!iosFirebase) {
+  errors.push(`${iosFirebasePath} bulunamadı.`);
+} else if (plistValue(iosFirebase, 'BUNDLE_ID') !== expectedAppId) {
+  errors.push(`${iosFirebasePath} ${expectedAppId} bundle id'sine ait değil.`);
+} else {
+  const reversedClientId = plistValue(iosFirebase, 'REVERSED_CLIENT_ID');
+  if (!reversedClientId || !infoPlist.includes(`<string>${reversedClientId}</string>`)) {
+    errors.push('Google REVERSED_CLIENT_ID, Info.plist CFBundleURLSchemes içinde yok.');
+  }
+}
+
+if (!fs.existsSync(fullPath('ios/App/App/PrivacyInfo.xcprivacy'))) {
+  warnings.push('App hedefinde PrivacyInfo.xcprivacy yok; required-reason API kullanımı arşivden önce doğrulanmalı.');
+}
+
+if (errors.length) {
+  console.error('App Store hazırlık kontrolü başarısız:');
+  for (const error of errors) console.error(`- ${error}`);
+  if (warnings.length) {
+    console.error('\nUyarılar:');
+    for (const warning of warnings) console.error(`- ${warning}`);
+  }
+  process.exitCode = 1;
+} else {
+  console.log('App Store blocker kontrolü geçti.');
+  if (warnings.length) {
+    console.log('\nUyarılar:');
+    for (const warning of warnings) console.log(`- ${warning}`);
+  }
+}

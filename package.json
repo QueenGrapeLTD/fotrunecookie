@@ -9,6 +9,7 @@
     "test": "node --test test_*.js",
     "predeploy:check": "node scripts/predeploy-check.js && npm test && npm --prefix functions test && npm run build",
     "mobile:check": "node scripts/mobile-config-check.js",
+    "appstore:check": "node scripts/app-store-check.js",
     "android:signing:init": "node scripts/generate-android-upload-key.js",
     "preview": "vite preview",
     "cap:add:android": "cap add android",
@@ -37,7 +38,7 @@
   "overrides": {
     "@hono/node-server": "2.0.12",
     "@opentelemetry/core": "2.10.0",
-    "brace-expansion": "5.0.8",
+    "brace-expansion": "5.0.9",
     "tar": "7.5.22",
     "uuid": "11.1.1"
   }

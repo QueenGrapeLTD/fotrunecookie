@@ -50,6 +50,14 @@ class AdManager {
           tagForChildDirectedTreatment: false,
           tagForUnderAgeOfConsent: false,
         });
+        if (Capacitor.getPlatform() === "ios") {
+          const tracking = await AdMob.trackingAuthorizationStatus().catch(
+            () => null,
+          );
+          if (tracking?.status === "notDetermined") {
+            await AdMob.requestTrackingAuthorization().catch(() => null);
+          }
+        }
         const consent = await AdMob.requestConsentInfo().catch(() => null);
         if (consent?.isConsentFormAvailable && consent?.status === "REQUIRED") {
           await AdMob.showConsentForm().catch(() => null);

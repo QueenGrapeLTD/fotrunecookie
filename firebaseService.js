@@ -491,6 +491,16 @@ async function completeSocialSignIn(result) {
   return { success: true, user };
 }
 
+async function preserveNativeAppleDisplayName(result, nativeResult, provider) {
+  if (provider !== "apple" || !result?.user) return result;
+
+  const displayName = cleanString(nativeResult?.user?.displayName, 80);
+  if (displayName && !cleanString(result.user.displayName, 80)) {
+    await updateProfile(result.user, { displayName });
+  }
+  return result;
+}
+
 function isNativeMobileAuthRuntime() {
   if (Capacitor.isNativePlatform?.() === true) return true;
 
@@ -544,6 +554,41 @@ function waitForAuthRetry(delayMs) {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
+async function waitForAuthPersistenceAfterNativeCredential(timeoutMs = 1500) {
+  let timeoutId;
+  const timedOut = await Promise.race([
+    authPersistenceReady.then(() => false),
+    new Promise((resolve) => {
+      timeoutId = setTimeout(() => resolve(true), timeoutMs);
+    }),
+  ]);
+  clearTimeout(timeoutId);
+  if (timedOut) {
+    console.warn(
+      "Firebase persistence is still initializing; continuing native social sign-in.",
+    );
+  }
+}
+
+async function settleAuthOperation(operation, timeoutMs, label) {
+  let timeoutId;
+  try {
+    const completed = await Promise.race([
+      Promise.resolve(operation).then(() => true),
+      new Promise((resolve) => {
+        timeoutId = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+    if (!completed) console.warn(`${label} timed out; continuing sign-in.`);
+    return completed;
+  } catch (error) {
+    console.warn(`${label} failed; continuing sign-in.`, error?.code || error?.message);
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function requestNativeGoogleCredential() {
   let credentialManagerError = null;
 
@@ -585,7 +630,6 @@ async function requestNativeGoogleCredential() {
 }
 
 async function signInNatively(provider) {
-  await authPersistenceReady;
   let nativeResult;
   if (provider === "apple") {
     nativeResult = await FirebaseAuthentication.signInWithApple({
@@ -599,6 +643,7 @@ async function signInNatively(provider) {
     // flow only as a compatibility fallback for older Android environments.
     nativeResult = await requestNativeGoogleCredential();
   }
+  await waitForAuthPersistenceAfterNativeCredential();
   const nativeCredential = nativeResult?.credential;
 
   if (!nativeCredential?.idToken) {
@@ -620,7 +665,8 @@ async function signInNatively(provider) {
   if (auth.currentUser?.isAnonymous) {
     const anonymousUser = auth.currentUser;
     try {
-      return await linkWithCredential(anonymousUser, credential);
+      const result = await linkWithCredential(anonymousUser, credential);
+      return preserveNativeAppleDisplayName(result, nativeResult, provider);
     } catch (error) {
       if (
         error?.code !== "auth/credential-already-in-use" &&
@@ -634,13 +680,23 @@ async function signInNatively(provider) {
       // returning Google/Apple login does not leave an orphan user behind.
       // Local history is retained and is synchronized after the permanent
       // account becomes active.
-      await deleteUser(anonymousUser).catch(async () => {
-        await firebaseSignOut(auth).catch(() => {});
-      });
+      const deletedAnonymousUser = await settleAuthOperation(
+        deleteUser(anonymousUser),
+        2000,
+        "Anonymous account cleanup",
+      );
+      if (!deletedAnonymousUser) {
+        await settleAuthOperation(
+          firebaseSignOut(auth),
+          1500,
+          "Anonymous account sign-out",
+        );
+      }
     }
   }
 
-  return signInWithCredential(auth, credential);
+  const result = await signInWithCredential(auth, credential);
+  return preserveNativeAppleDisplayName(result, nativeResult, provider);
 }
 
 export async function signInWithGoogle() {
@@ -1051,7 +1107,21 @@ export function onAuthChange(callback) {
       callback(user, null);
       return;
     }
-    callback(user, await syncUserWithDatabase(user));
+    let timeoutId;
+    const syncTimedOut = Symbol("auth-profile-sync-timeout");
+    const syncedProfile = await Promise.race([
+      syncUserWithDatabase(user),
+      new Promise((resolve) => {
+        timeoutId = setTimeout(() => resolve(syncTimedOut), 1800);
+      }),
+    ]);
+    clearTimeout(timeoutId);
+    if (syncedProfile === syncTimedOut) {
+      console.warn("Auth profile hydration timed out; rendering the signed-in user immediately.");
+      callback(user, null);
+      return;
+    }
+    callback(user, syncedProfile);
   });
 }
 
