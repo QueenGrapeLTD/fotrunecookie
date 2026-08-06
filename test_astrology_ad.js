@@ -52,6 +52,11 @@ test("rewarded ads require server-verified credits", async () => {
   assert.match(clientSource, /RewardAdPluginEvents\.FailedToLoad/);
   assert.match(clientSource, /RewardAdPluginEvents\.FailedToShow/);
   assert.match(clientSource, /RewardAdPluginEvents\.Showed/);
+  assert.match(clientSource, /VITE_ADMOB_TEST_MODE === "true"/);
+  assert.match(clientSource, /if \(this\.isTestMode\(\)\) return TEST_REWARDED_IDS/);
+  assert.match(clientSource, /admob\/rewarded-load-failed/);
+  assert.match(clientSource, /admob\/no-fill/);
+  assert.match(clientSource, /isNoFillError/);
   assert.match(clientSource, /admob\/rewarded-presentation-timeout/);
   assert.match(clientSource, /admob\/rewarded-completion-timeout/);
   assert.match(clientSource, /admob\/session-timeout/);

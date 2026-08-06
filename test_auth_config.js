@@ -92,7 +92,7 @@ test('iOS target is entitled and configured for Sign in with Apple', () => {
   assert.match(iosEntitlements, /<string>Default<\/string>/);
   assert.match(xcodeProject, /CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements/);
   assert.match(xcodeProject, /com\.apple\.SignInWithApple/);
-  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 10/);
+  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 11/);
   assert.match(xcodeProject, /TARGETED_DEVICE_FAMILY = "1,2"/);
 });
 
@@ -135,9 +135,12 @@ test('rapid cookie taps do not trigger iOS double-tap page zoom', () => {
 });
 
 test('mobile sessions restore locally before creating a new anonymous user', () => {
+  assert.match(authSource, /initializeAuth\(app, \{ persistence: browserLocalPersistence \}\)/);
+  assert.match(authSource, /Capacitor\.isNativePlatform\(\)/);
   assert.match(authSource, /const authPersistenceReady = Promise\.resolve\(auth\)/);
   assert.doesNotMatch(authSource, /\n\s*setPersistence,\n/);
   assert.match(authSource, /const restoredUser = await initialAuthState/);
+  assert.match(authSource, /Initial session hydration timed out/);
   assert.match(authSource, /ACCOUNT_STATE_CACHE_MS = 30 \* 1000/);
   assert.match(authSource, /PROFILE_CACHE_MS = 15 \* 60 \* 1000/);
   assert.match(authSource, /APP_SETTINGS_CACHE_MS = 5 \* 60 \* 1000/);

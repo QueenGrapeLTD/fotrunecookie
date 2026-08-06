@@ -6,7 +6,7 @@
 - Bundle ID: com.fortunecookieai.app
 - iOS deployment target: 15.0
 - Marketing version: 1.0
-- Build number: 10
+- Build number: 11
 
 ## Local validation
 

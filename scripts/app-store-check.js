@@ -45,6 +45,12 @@ function requireEnv(env, key) {
 }
 
 const env = readEnv(fullPath('.env'));
+if (env.VITE_ADMOB_TEST_MODE === 'true' || process.env.VITE_ADMOB_TEST_MODE === 'true') {
+  errors.push('App Store derlemesinde VITE_ADMOB_TEST_MODE etkin olamaz.');
+}
+if (env.VITE_DEVICE_DIAGNOSTICS === 'true' || process.env.VITE_DEVICE_DIAGNOSTICS === 'true') {
+  errors.push('App Store derlemesinde VITE_DEVICE_DIAGNOSTICS etkin olamaz.');
+}
 for (const key of [
   'VITE_FIREBASE_API_KEY',
   'VITE_FIREBASE_AUTH_DOMAIN',

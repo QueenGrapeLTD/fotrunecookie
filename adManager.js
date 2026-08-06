@@ -28,6 +28,12 @@ function createAdError(code, cause) {
   return error;
 }
 
+function isNoFillError(error) {
+  return /no ad to show|no fill/i.test(
+    `${error?.message || ""} ${error?.cause?.message || ""}`,
+  );
+}
+
 async function runAdOperation(operation, timeoutMs, errorCode) {
   let timeoutId;
   try {
@@ -72,9 +78,14 @@ class AdManager {
     };
   }
 
+  isTestMode() {
+    return import.meta.env.DEV ||
+      import.meta.env.VITE_ADMOB_TEST_MODE === "true";
+  }
+
   getAdId() {
     const platform = Capacitor.getPlatform();
-    if (import.meta.env.DEV) return TEST_REWARDED_IDS[platform] || "";
+    if (this.isTestMode()) return TEST_REWARDED_IDS[platform] || "";
     return platform === "ios"
       ? import.meta.env.VITE_ADMOB_IOS_REWARDED_AD_UNIT_ID || ""
       : import.meta.env.VITE_ADMOB_ANDROID_REWARDED_AD_UNIT_ID || "";
@@ -97,7 +108,15 @@ class AdManager {
       }),
       AdMob.addListener(RewardAdPluginEvents.FailedToLoad, (error) => {
         this.loaded = false;
-        this.lastFailure = error;
+        this.lastFailure = createAdError(
+          "admob/rewarded-load-failed",
+          error,
+        );
+        console.warn(
+          "Rewarded ad SDK load failure:",
+          error?.code,
+          error?.message,
+        );
       }),
       AdMob.addListener(RewardAdPluginEvents.FailedToShow, (error) => {
         const failure = createAdError("admob/rewarded-show-failed", error);
@@ -126,7 +145,7 @@ class AdManager {
         await this.registerRewardListeners();
         await runAdOperation(
           AdMob.initialize({
-            initializeForTesting: import.meta.env.DEV,
+            initializeForTesting: this.isTestMode(),
             tagForChildDirectedTreatment: false,
             tagForUnderAgeOfConsent: false,
           }),
@@ -256,7 +275,7 @@ class AdManager {
         await runAdOperation(
           AdMob.prepareRewardVideoAd({
             adId: this.getAdId(),
-            isTesting: import.meta.env.DEV,
+            isTesting: this.isTestMode(),
             npa: this.requestNonPersonalizedAds,
             ssv: { userId: uid },
           }),
@@ -266,10 +285,12 @@ class AdManager {
         this.loaded = true;
         return;
       } catch (error) {
-        lastError = error;
-        this.lastFailure = error;
-        if (attempt === 0) {
+        lastError = this.lastFailure || error;
+        this.lastFailure = lastError;
+        if (attempt === 0 && !isNoFillError(lastError)) {
           await new Promise((resolve) => setTimeout(resolve, 1200));
+        } else {
+          break;
         }
       }
     }
@@ -370,12 +391,20 @@ class AdManager {
       return result;
     } catch (error) {
       this.lastFailure = error;
-      console.warn("Rewarded ad failed:", error?.message);
+      console.warn(
+        "Rewarded ad failed:",
+        error?.code,
+        error?.message,
+        error?.cause?.code,
+        error?.cause?.message,
+      );
       const result = {
         verified: false,
         creditGranted: false,
         pending: false,
-        errorCode: error?.code || error?.message || "admob/rewarded-failed",
+        errorCode: isNoFillError(error)
+          ? "admob/no-fill"
+          : error?.code || error?.message || "admob/rewarded-failed",
       };
       if (onAdCompleted) onAdCompleted(result);
       return result;
