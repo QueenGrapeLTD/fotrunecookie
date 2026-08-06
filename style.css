@@ -2115,6 +2115,17 @@ body {
   transform: scale(1.03);
 }
 
+/* Reserve space for the native adaptive banner so it never covers controls. */
+:root {
+  --native-ad-banner-height: 0px;
+}
+
+html.native-ad-banner-visible body {
+  padding-bottom: calc(
+    var(--native-ad-banner-height, 50px) + env(safe-area-inset-bottom, 0px)
+  );
+}
+
 /* Persistent Bottom Ad Banner */
 .ad-banner-container {
   width: 100%;

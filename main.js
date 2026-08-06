@@ -354,6 +354,7 @@ async function updateAdStatusUI(forceRefresh = false) {
   const isPremium =
     accountState?.isPremium === true ||
     accountState?.membershipTier === 'premium';
+  void adManager.syncDisplayAds({ isPremium });
   const premiumLimit =
     Number(accountState?.premiumUsage?.limit) ||
     Number(appSettings.premiumDailyLimit) ||

@@ -1,6 +1,9 @@
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import {
   AdMob,
+  BannerAdPluginEvents,
+  BannerAdPosition,
+  BannerAdSize,
   RewardAdPluginEvents,
 } from "@capacitor-community/admob";
 import {
@@ -13,6 +16,15 @@ const TEST_REWARDED_IDS = {
   android: "ca-app-pub-3940256099942544/5224354917",
   ios: "ca-app-pub-3940256099942544/1712485313",
 };
+const TEST_BANNER_IDS = {
+  android: "ca-app-pub-3940256099942544/6300978111",
+  ios: "ca-app-pub-3940256099942544/2934735716",
+};
+const TEST_APP_OPEN_IDS = {
+  android: "ca-app-pub-3940256099942544/9257395921",
+  ios: "ca-app-pub-3940256099942544/5575463023",
+};
+const AppOpenAd = registerPlugin("AppOpenAd");
 const AD_STATE_CACHE_MS = 5 * 60 * 1000;
 const DEFAULT_DAILY_AD_LIMIT = 9;
 
@@ -28,6 +40,10 @@ class AdManager {
     this.refreshPromise = null;
     this.lastRefreshAt = 0;
     this.stateOwnerUid = "";
+    this.bannerVisible = false;
+    this.bannerPromise = null;
+    this.appOpenShownThisLaunch = false;
+    this.appOpenPromise = null;
     this.state = {
       credits: 0,
       rewardedToday: 0,
@@ -36,7 +52,7 @@ class AdManager {
     };
   }
 
-  getAdId() {
+  getRewardedAdId() {
     const platform = Capacitor.getPlatform();
     if (import.meta.env.DEV) return TEST_REWARDED_IDS[platform] || "";
     return platform === "ios"
@@ -69,8 +85,29 @@ class AdManager {
     this.listenersReady = true;
   }
 
+  async registerBannerListeners() {
+    this.listenerHandles.push(
+      await AdMob.addListener(BannerAdPluginEvents.SizeChanged, (size) => {
+        const height = Math.max(Number(size?.height) || 0, 50);
+        document.documentElement.style.setProperty(
+          "--native-ad-banner-height",
+          `${height}px`,
+        );
+      }),
+      await AdMob.addListener(BannerAdPluginEvents.FailedToLoad, (error) => {
+        this.bannerVisible = false;
+        this.lastFailure = error;
+        document.documentElement.classList.remove("native-ad-banner-visible");
+      }),
+    );
+  }
+
   async init() {
-    if (!Capacitor.isNativePlatform() || !this.getAdId() || this.ready) return;
+    if (
+      !Capacitor.isNativePlatform() ||
+      !this.hasConfiguredAdUnit() ||
+      this.ready
+    ) return;
     if (this.initPromise) return this.initPromise;
     this.initPromise = (async () => {
       try {
@@ -81,6 +118,7 @@ class AdManager {
           tagForUnderAgeOfConsent: false,
         });
         await this.registerRewardListeners();
+        await this.registerBannerListeners();
         if (Capacitor.getPlatform() === "ios") {
           const tracking = await AdMob.trackingAuthorizationStatus().catch(
             () => null,
@@ -105,7 +143,90 @@ class AdManager {
   }
 
   isAvailable() {
-    return Capacitor.isNativePlatform() && Boolean(this.getAdId());
+    return Capacitor.isNativePlatform() && Boolean(this.getRewardedAdId());
+  }
+
+  async showBannerForFreeUser() {
+    if (!Capacitor.isNativePlatform() || !this.getBannerAdId()) return false;
+    if (this.bannerVisible) return true;
+    if (this.bannerPromise) return this.bannerPromise;
+
+    this.bannerPromise = (async () => {
+      await this.init();
+      if (!this.ready) return false;
+      await AdMob.showBanner({
+        adId: this.getBannerAdId(),
+        adSize: BannerAdSize.ADAPTIVE_BANNER,
+        position: BannerAdPosition.BOTTOM_CENTER,
+        margin: 0,
+        isTesting: import.meta.env.DEV,
+      });
+      this.bannerVisible = true;
+      document.documentElement.classList.add("native-ad-banner-visible");
+      return true;
+    })()
+      .catch((error) => {
+        this.lastFailure = error;
+        this.bannerVisible = false;
+        document.documentElement.classList.remove("native-ad-banner-visible");
+        console.warn("Banner ad failed:", error?.message);
+        return false;
+      })
+      .finally(() => {
+        this.bannerPromise = null;
+      });
+    return this.bannerPromise;
+  }
+
+  async hideBanner() {
+    document.documentElement.classList.remove("native-ad-banner-visible");
+    if (!Capacitor.isNativePlatform() || !this.bannerVisible) return;
+    this.bannerVisible = false;
+    await AdMob.removeBanner().catch(() => null);
+  }
+
+  async showAppOpenForFreeUser() {
+    if (
+      !Capacitor.isNativePlatform() ||
+      !this.getAppOpenAdId() ||
+      this.appOpenShownThisLaunch
+    ) {
+      return false;
+    }
+    if (this.appOpenPromise) return this.appOpenPromise;
+
+    // Reserve this launch before loading. A no-fill response must not trigger
+    // another request every time account state refreshes.
+    this.appOpenShownThisLaunch = true;
+    this.appOpenPromise = (async () => {
+      await this.init();
+      if (!this.ready) return false;
+      await AppOpenAd.prepare({
+        adId: this.getAppOpenAdId(),
+        isTesting: import.meta.env.DEV,
+      });
+      await AppOpenAd.show();
+      return true;
+    })()
+      .catch((error) => {
+        this.lastFailure = error;
+        console.warn("App open ad unavailable:", error?.message);
+        return false;
+      })
+      .finally(() => {
+        this.appOpenPromise = null;
+      });
+    return this.appOpenPromise;
+  }
+
+  async syncDisplayAds({ isPremium = false } = {}) {
+    if (!Capacitor.isNativePlatform()) return;
+    if (isPremium) {
+      await this.hideBanner();
+      return;
+    }
+    await this.showBannerForFreeUser();
+    void this.showAppOpenForFreeUser();
   }
 
   async refresh(force = false) {
@@ -165,6 +286,30 @@ class AdManager {
     };
   }
 
+  getBannerAdId() {
+    const platform = Capacitor.getPlatform();
+    if (import.meta.env.DEV) return TEST_BANNER_IDS[platform] || "";
+    return platform === "ios"
+      ? import.meta.env.VITE_ADMOB_IOS_BANNER_AD_UNIT_ID || ""
+      : import.meta.env.VITE_ADMOB_ANDROID_BANNER_AD_UNIT_ID || "";
+  }
+
+  getAppOpenAdId() {
+    const platform = Capacitor.getPlatform();
+    if (import.meta.env.DEV) return TEST_APP_OPEN_IDS[platform] || "";
+    return platform === "ios"
+      ? import.meta.env.VITE_ADMOB_IOS_APP_OPEN_AD_UNIT_ID || ""
+      : import.meta.env.VITE_ADMOB_ANDROID_APP_OPEN_AD_UNIT_ID || "";
+  }
+
+  hasConfiguredAdUnit() {
+    return Boolean(
+      this.getRewardedAdId() ||
+        this.getBannerAdId() ||
+        this.getAppOpenAdId(),
+    );
+  }
+
   async consumePremiumQuery() {
     await this.refresh(true);
     return this.getPremiumQueries() > 0;
@@ -177,7 +322,7 @@ class AdManager {
         this.loaded = false;
         this.lastFailure = null;
         await AdMob.prepareRewardVideoAd({
-          adId: this.getAdId(),
+          adId: this.getRewardedAdId(),
           isTesting: import.meta.env.DEV,
           ssv: { userId: uid },
         });

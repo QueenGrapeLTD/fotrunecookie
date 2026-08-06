@@ -15,4 +15,5 @@ ext {
     cordovaAndroidVersion = '14.0.1'
     rgcfaIncludeGoogle = true
     androidxCredentialsVersion = '1.3.0'
+    playServicesAdsVersion = '24.9.0'
 }
