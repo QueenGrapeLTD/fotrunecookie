@@ -206,14 +206,14 @@ function setupEventListeners() {
   // Load & save branding settings
   const inputBrandingIg = document.getElementById('branding-instagram');
   const inputBrandingName = document.getElementById('branding-name');
-  if (inputBrandingIg) inputBrandingIg.value = localStorage.getItem('fc_app_branding_instagram') || '@fortunecookie.ai';
+  if (inputBrandingIg) inputBrandingIg.value = localStorage.getItem('fc_app_branding_instagram') || '@fortunecookieai';
   if (inputBrandingName) inputBrandingName.value = localStorage.getItem('fc_app_branding_name') || 'Fortune Cookie AI App';
 
   const formBranding = document.getElementById('form-branding');
   if (formBranding) {
     formBranding.addEventListener('submit', (e) => {
       e.preventDefault();
-      const igVal = inputBrandingIg.value.trim() || '@fortunecookie.ai';
+      const igVal = inputBrandingIg.value.trim() || '@fortunecookieai';
       const nameVal = inputBrandingName.value.trim() || 'Fortune Cookie AI App';
       localStorage.setItem('fc_app_branding_instagram', igVal);
       localStorage.setItem('fc_app_branding_name', nameVal);
