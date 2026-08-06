@@ -4,6 +4,7 @@ import { Preferences } from '@capacitor/preferences';
 import { DEFAULT_PROFILE, normalizeProfile } from './profileSchema.js';
 
 const HISTORY_FILE = 'fortune_cookie_history_v1.json';
+const HISTORY_LOCAL_KEY = 'fortune_cookie_history_v2';
 const PROFILE_KEY = 'fortune_cookie_profile_v1';
 
 // Cache for history to prevent constant disk reads
@@ -12,6 +13,18 @@ let historyCache = null;
 async function getStoredHistory() {
   if (historyCache) return historyCache;
   try {
+    const localValue = localStorage.getItem(HISTORY_LOCAL_KEY);
+    if (localValue) {
+      const localHistory = JSON.parse(localValue);
+      if (Array.isArray(localHistory)) {
+        historyCache = localHistory;
+        return historyCache;
+      }
+    }
+  } catch (error) {
+    console.warn('Local history cache could not be read', error?.message);
+  }
+  try {
     const result = await Filesystem.readFile({
       path: HISTORY_FILE,
       directory: Directory.Documents,
@@ -19,6 +32,7 @@ async function getStoredHistory() {
     });
     const parsed = JSON.parse(result.data);
     historyCache = Array.isArray(parsed) ? parsed : [];
+    localStorage.setItem(HISTORY_LOCAL_KEY, JSON.stringify(historyCache));
   } catch (e) {
     historyCache = [];
   }
@@ -27,12 +41,20 @@ async function getStoredHistory() {
 
 async function writeStoredHistory(history) {
   const safeHistory = Array.isArray(history) ? history : [];
-  await Filesystem.writeFile({
-    path: HISTORY_FILE,
-    data: JSON.stringify(safeHistory),
-    directory: Directory.Documents,
-    encoding: Encoding.UTF8,
-  });
+  const serializedHistory = JSON.stringify(safeHistory);
+  localStorage.setItem(HISTORY_LOCAL_KEY, serializedHistory);
+  try {
+    await Filesystem.writeFile({
+      path: HISTORY_FILE,
+      data: serializedHistory,
+      directory: Directory.Documents,
+      encoding: Encoding.UTF8,
+    });
+  } catch (error) {
+    // WebViews and scoped Android storage can deny Documents access. The
+    // localStorage copy remains authoritative for anonymous device history.
+    console.warn('History file mirror could not be written', error?.message);
+  }
   historyCache = safeHistory;
 }
 

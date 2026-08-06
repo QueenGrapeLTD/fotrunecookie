@@ -14,6 +14,7 @@ const TEST_REWARDED_IDS = {
   ios: "ca-app-pub-3940256099942544/1712485313",
 };
 const AD_STATE_CACHE_MS = 5 * 60 * 1000;
+const DEFAULT_DAILY_AD_LIMIT = 9;
 
 class AdManager {
   constructor() {
@@ -30,7 +31,7 @@ class AdManager {
     this.state = {
       credits: 0,
       rewardedToday: 0,
-      dailyLimit: 3,
+      dailyLimit: DEFAULT_DAILY_AD_LIMIT,
       adsPerCredit: 3,
     };
   }
@@ -112,7 +113,7 @@ class AdManager {
       this.state = {
         credits: 0,
         rewardedToday: 0,
-        dailyLimit: 3,
+        dailyLimit: DEFAULT_DAILY_AD_LIMIT,
         adsPerCredit: 3,
       };
       this.lastRefreshAt = Date.now();
@@ -146,12 +147,21 @@ class AdManager {
   }
 
   getAdProgress() {
+    const watchedToday = Math.max(Number(this.state.rewardedToday) || 0, 0);
+    const dailyLimit = Math.max(
+      Number(this.state.dailyLimit) || DEFAULT_DAILY_AD_LIMIT,
+      1,
+    );
+    const adsPerCredit = Math.max(Number(this.state.adsPerCredit) || 3, 1);
+    const canEarnMore = watchedToday < dailyLimit;
     return {
-      current: Math.min(
-        Math.max(Number(this.state.rewardedToday) || 0, 0),
-        Math.max(Number(this.state.dailyLimit) || 3, 1),
-      ),
-      required: Math.max(Number(this.state.adsPerCredit) || 3, 1),
+      current: canEarnMore
+        ? watchedToday % adsPerCredit
+        : adsPerCredit,
+      required: adsPerCredit,
+      watchedToday,
+      dailyLimit,
+      canEarnMore,
     };
   }
 
