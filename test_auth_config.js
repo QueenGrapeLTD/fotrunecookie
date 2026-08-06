@@ -107,10 +107,15 @@ test('iOS web layout respects notch and home indicator safe areas', () => {
 });
 
 test('rapid cookie taps do not trigger iOS double-tap page zoom', () => {
-  assert.match(styles, /\.cookie-wrapper\s*\{[^}]*touch-action:\s*manipulation/s);
+  assert.match(html, /maximum-scale=1\.0/);
+  assert.match(html, /user-scalable=no/);
+  assert.match(styles, /\.cookie-wrapper\s*\{[^}]*touch-action:\s*none/s);
   assert.match(styles, /\.cookie-wrapper\s*\{[^}]*-webkit-touch-callout:\s*none/s);
   assert.match(html, /id="cookie-interactive"/);
   assert.match(mainSource, /event\?\.cancelable/);
+  assert.match(mainSource, /addEventListener\('touchend'/);
+  assert.match(mainSource, /\{ passive: false \}/);
+  assert.match(mainSource, /Date\.now\(\) - lastCookieTouchAt < 750/);
   assert.match(mainSource, /addEventListener\('dblclick'/);
   assert.match(mainSource, /event\.preventDefault\(\)/);
 });

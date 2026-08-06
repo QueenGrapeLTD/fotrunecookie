@@ -1866,6 +1866,8 @@ function renderAuthenticatedAccount(user, { closeProfile = false } = {}) {
 }
 
 function setupEventListeners() {
+  let lastCookieTouchAt = 0;
+
   const registerCookieTap = (event) => {
     if (event?.cancelable) event.preventDefault();
     if (isAnimating || fortuneRequestInFlight) return;
@@ -1894,8 +1896,22 @@ function setupEventListeners() {
     void crackCookie();
   };
 
+  // iOS decides whether to zoom before dblclick fires. Cancelling touchend keeps
+  // rapid cookie taps inside the app and also suppresses the synthetic click.
+  cookieInteractive.addEventListener('touchend', (event) => {
+    event.preventDefault();
+    lastCookieTouchAt = Date.now();
+    registerCookieTap(event);
+  }, { passive: false });
+
   // Three deliberate taps reveal progressive cracks, then start one request.
-  cookieInteractive.addEventListener('click', registerCookieTap);
+  cookieInteractive.addEventListener('click', (event) => {
+    if (Date.now() - lastCookieTouchAt < 750) {
+      event.preventDefault();
+      return;
+    }
+    registerCookieTap(event);
+  });
   cookieInteractive.addEventListener('dblclick', (event) => {
     event.preventDefault();
   });
