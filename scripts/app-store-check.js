@@ -4,6 +4,10 @@ import process from 'node:process';
 
 const root = process.cwd();
 const expectedAppId = 'com.fortunecookieai.app';
+const expectedFirebaseProjectId = 'fortunecookieai-prod';
+const expectedFirebaseSenderId = '53381061591';
+const expectedFirebaseWebAppId = '1:53381061591:web:a06506081fc5ef2fd04992';
+const expectedFirebaseIosAppId = '1:53381061591:ios:a47ef8928c618a83d04992';
 const sampleAdMobPublisher = 'ca-app-pub-3940256099942544';
 const errors = [];
 const warnings = [];
@@ -50,6 +54,15 @@ for (const key of [
   'VITE_ADMOB_IOS_REWARDED_AD_UNIT_ID',
 ]) {
   requireEnv(env, key);
+}
+if (env.VITE_FIREBASE_PROJECT_ID !== expectedFirebaseProjectId) {
+  errors.push(`VITE_FIREBASE_PROJECT_ID ${expectedFirebaseProjectId} değil.`);
+}
+if (env.VITE_FIREBASE_MESSAGING_SENDER_ID !== expectedFirebaseSenderId) {
+  errors.push(`VITE_FIREBASE_MESSAGING_SENDER_ID ${expectedFirebaseSenderId} değil.`);
+}
+if (env.VITE_FIREBASE_APP_ID !== expectedFirebaseWebAppId) {
+  errors.push('VITE_FIREBASE_APP_ID production web uygulamasına ait değil.');
 }
 
 const functionsEnv = readEnv(fullPath('functions/.env'));
@@ -133,6 +146,15 @@ if (!iosFirebase) {
 } else if (plistValue(iosFirebase, 'BUNDLE_ID') !== expectedAppId) {
   errors.push(`${iosFirebasePath} ${expectedAppId} bundle id'sine ait değil.`);
 } else {
+  if (plistValue(iosFirebase, 'PROJECT_ID') !== expectedFirebaseProjectId) {
+    errors.push(`${iosFirebasePath} ${expectedFirebaseProjectId} projesine ait değil.`);
+  }
+  if (plistValue(iosFirebase, 'GCM_SENDER_ID') !== expectedFirebaseSenderId) {
+    errors.push(`${iosFirebasePath} production sender id'sine ait değil.`);
+  }
+  if (plistValue(iosFirebase, 'GOOGLE_APP_ID') !== expectedFirebaseIosAppId) {
+    errors.push(`${iosFirebasePath} App Store iOS Firebase uygulamasına ait değil.`);
+  }
   const reversedClientId = plistValue(iosFirebase, 'REVERSED_CLIENT_ID');
   if (!reversedClientId || !infoPlist.includes(`<string>${reversedClientId}</string>`)) {
     errors.push('Google REVERSED_CLIENT_ID, Info.plist CFBundleURLSchemes içinde yok.');

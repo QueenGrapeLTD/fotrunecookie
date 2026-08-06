@@ -51,11 +51,20 @@ test("rewarded ads require server-verified credits", async () => {
   assert.match(clientSource, /RewardAdPluginEvents\.Rewarded/);
   assert.match(clientSource, /RewardAdPluginEvents\.FailedToLoad/);
   assert.match(clientSource, /RewardAdPluginEvents\.FailedToShow/);
+  assert.match(clientSource, /RewardAdPluginEvents\.Showed/);
+  assert.match(clientSource, /admob\/rewarded-presentation-timeout/);
+  assert.match(clientSource, /admob\/rewarded-completion-timeout/);
+  assert.match(clientSource, /admob\/session-timeout/);
+  assert.match(clientSource, /npa:\s*this\.requestNonPersonalizedAds/);
   assert.match(clientSource, /rewardItem\?\.amount/);
   assert.match(clientSource, /pending:\s*true/);
   assert.match(clientSource, /ssv:\s*\{\s*userId:\s*uid/);
   assert.match(clientSource, /getAdRewardStateFromServer/);
   assert.doesNotMatch(clientSource, /localStorage/);
+  assert.doesNotMatch(
+    clientSource,
+    /await ensureFreemiumSession\(\);\s*await AdMob\.initialize/s,
+  );
 
   assert.match(serverSource, /verifyAdMobCallback/);
   assert.match(serverSource, /ADMOB_REWARDED_AD_UNIT_IDS/);

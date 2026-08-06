@@ -14,16 +14,53 @@ const TEST_REWARDED_IDS = {
   ios: "ca-app-pub-3940256099942544/1712485313",
 };
 const AD_STATE_CACHE_MS = 5 * 60 * 1000;
+const AD_INIT_TIMEOUT_MS = 6000;
+const AD_SESSION_TIMEOUT_MS = 8000;
+const AD_STATE_TIMEOUT_MS = 8000;
+const AD_LOAD_TIMEOUT_MS = 15000;
+const AD_PRESENT_TIMEOUT_MS = 8000;
+const AD_REWARD_TIMEOUT_MS = 3 * 60 * 1000;
+
+function createAdError(code, cause) {
+  const error = new Error(cause?.message || code);
+  error.code = code;
+  error.cause = cause;
+  return error;
+}
+
+async function runAdOperation(operation, timeoutMs, errorCode) {
+  let timeoutId;
+  try {
+    return await Promise.race([
+      Promise.resolve(operation),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(createAdError(errorCode)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 class AdManager {
   constructor() {
     this.ready = false;
     this.rewarded = false;
+    this.shown = false;
     this.loaded = false;
     this.listenersReady = false;
     this.listenerHandles = [];
     this.lastFailure = null;
     this.initPromise = null;
+    this.privacyPromise = null;
+    this.requestNonPersonalizedAds = false;
+    this.pendingShowResolve = null;
+    this.pendingShowReject = null;
+    this.pendingRewardResolve = null;
+    this.pendingRewardReject = null;
     this.refreshPromise = null;
     this.lastRefreshAt = 0;
     this.stateOwnerUid = "";
@@ -50,19 +87,32 @@ class AdManager {
         this.loaded = true;
         this.lastFailure = null;
       }),
-      AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
+      AdMob.addListener(RewardAdPluginEvents.Rewarded, (reward) => {
         this.rewarded = true;
+        this.pendingRewardResolve?.(reward);
+      }),
+      AdMob.addListener(RewardAdPluginEvents.Showed, () => {
+        this.shown = true;
+        this.pendingShowResolve?.();
       }),
       AdMob.addListener(RewardAdPluginEvents.FailedToLoad, (error) => {
         this.loaded = false;
         this.lastFailure = error;
       }),
       AdMob.addListener(RewardAdPluginEvents.FailedToShow, (error) => {
+        const failure = createAdError("admob/rewarded-show-failed", error);
         this.loaded = false;
-        this.lastFailure = error;
+        this.lastFailure = failure;
+        this.pendingShowReject?.(failure);
+        this.pendingRewardReject?.(failure);
       }),
       AdMob.addListener(RewardAdPluginEvents.Dismissed, () => {
         this.loaded = false;
+        if (!this.rewarded) {
+          this.pendingRewardReject?.(
+            createAdError("admob/rewarded-dismissed-without-reward"),
+          );
+        }
       }),
     ]);
     this.listenersReady = true;
@@ -73,26 +123,18 @@ class AdManager {
     if (this.initPromise) return this.initPromise;
     this.initPromise = (async () => {
       try {
-        await ensureFreemiumSession();
-        await AdMob.initialize({
-          initializeForTesting: import.meta.env.DEV,
-          tagForChildDirectedTreatment: false,
-          tagForUnderAgeOfConsent: false,
-        });
         await this.registerRewardListeners();
-        if (Capacitor.getPlatform() === "ios") {
-          const tracking = await AdMob.trackingAuthorizationStatus().catch(
-            () => null,
-          );
-          if (tracking?.status === "notDetermined") {
-            await AdMob.requestTrackingAuthorization().catch(() => null);
-          }
-        }
-        const consent = await AdMob.requestConsentInfo().catch(() => null);
-        if (consent?.isConsentFormAvailable && consent?.status === "REQUIRED") {
-          await AdMob.showConsentForm().catch(() => null);
-        }
+        await runAdOperation(
+          AdMob.initialize({
+            initializeForTesting: import.meta.env.DEV,
+            tagForChildDirectedTreatment: false,
+            tagForUnderAgeOfConsent: false,
+          }),
+          AD_INIT_TIMEOUT_MS,
+          "admob/initialize-timeout",
+        );
         this.ready = true;
+        this.privacyPromise ||= this.preparePrivacySettings();
       } catch (error) {
         this.lastFailure = error;
         console.warn("AdMob initialization failed:", error?.message);
@@ -101,6 +143,47 @@ class AdManager {
       }
     })();
     return this.initPromise;
+  }
+
+  async preparePrivacySettings() {
+    try {
+      if (Capacitor.getPlatform() === "ios") {
+        const tracking = await runAdOperation(
+          AdMob.trackingAuthorizationStatus(),
+          AD_INIT_TIMEOUT_MS,
+          "admob/tracking-status-timeout",
+        ).catch(() => null);
+        if (tracking?.status === "notDetermined") {
+          await runAdOperation(
+            AdMob.requestTrackingAuthorization(),
+            60000,
+            "admob/tracking-authorization-timeout",
+          ).catch(() => null);
+        }
+      }
+
+      const consent = await runAdOperation(
+        AdMob.requestConsentInfo(),
+        AD_LOAD_TIMEOUT_MS,
+        "admob/consent-info-timeout",
+      );
+      this.requestNonPersonalizedAds = consent?.canRequestAds === false;
+      if (consent?.isConsentFormAvailable && consent?.status === "REQUIRED") {
+        const result = await runAdOperation(
+          AdMob.showConsentForm(),
+          60000,
+          "admob/consent-form-timeout",
+        );
+        this.requestNonPersonalizedAds = result?.canRequestAds === false;
+      }
+    } catch (error) {
+      // A privacy-network failure must not leave the button pending forever.
+      // Request a non-personalized ad and let the Mobile Ads SDK enforce the
+      // device's current UMP eligibility.
+      this.requestNonPersonalizedAds = true;
+      this.lastFailure = error;
+      console.warn("Ad privacy preparation failed:", error?.code || error?.message);
+    }
   }
 
   isAvailable() {
@@ -129,7 +212,11 @@ class AdManager {
     if (this.refreshPromise) return this.refreshPromise;
     this.refreshPromise = (async () => {
       try {
-        this.state = await getAdRewardStateFromServer();
+        this.state = await runAdOperation(
+          getAdRewardStateFromServer(),
+          AD_STATE_TIMEOUT_MS,
+          "admob/reward-state-timeout",
+        );
         this.lastRefreshAt = Date.now();
       } catch (error) {
         console.warn("Ad reward state unavailable:", error?.code);
@@ -166,11 +253,16 @@ class AdManager {
       try {
         this.loaded = false;
         this.lastFailure = null;
-        await AdMob.prepareRewardVideoAd({
-          adId: this.getAdId(),
-          isTesting: import.meta.env.DEV,
-          ssv: { userId: uid },
-        });
+        await runAdOperation(
+          AdMob.prepareRewardVideoAd({
+            adId: this.getAdId(),
+            isTesting: import.meta.env.DEV,
+            npa: this.requestNonPersonalizedAds,
+            ssv: { userId: uid },
+          }),
+          AD_LOAD_TIMEOUT_MS,
+          "admob/rewarded-load-timeout",
+        );
         this.loaded = true;
         return;
       } catch (error) {
@@ -207,14 +299,26 @@ class AdManager {
     }
 
     this.rewarded = false;
+    this.shown = false;
     try {
-      await this.init();
-      await ensureFreemiumSession();
+      await runAdOperation(
+        this.init(),
+        AD_INIT_TIMEOUT_MS,
+        "admob/initialize-timeout",
+      );
+      await runAdOperation(
+        ensureFreemiumSession(),
+        AD_SESSION_TIMEOUT_MS,
+        "admob/session-timeout",
+      );
       if (!this.ready || !auth.currentUser) {
-        const result = { verified: false, creditGranted: false };
-        if (onAdCompleted) onAdCompleted(result);
-        return result;
+        throw createAdError("admob/session-unavailable");
       }
+      await runAdOperation(
+        this.privacyPromise,
+        65000,
+        "admob/privacy-timeout",
+      );
       const uid = auth.currentUser.uid;
       await this.refresh(true);
       const previousCredits = this.getPremiumQueries();
@@ -223,7 +327,31 @@ class AdManager {
         0,
       );
       await this.prepareRewardedAd(uid);
-      const rewardItem = await AdMob.showRewardVideoAd();
+      const showStarted = new Promise((resolve, reject) => {
+        this.pendingShowResolve = resolve;
+        this.pendingShowReject = reject;
+      });
+      const rewardEvent = new Promise((resolve, reject) => {
+        this.pendingRewardResolve = resolve;
+        this.pendingRewardReject = reject;
+      });
+      void rewardEvent.catch(() => {});
+      const showCall = Promise.resolve().then(() => AdMob.showRewardVideoAd());
+      void showCall.catch((error) => {
+        const failure = createAdError("admob/rewarded-show-failed", error);
+        this.pendingShowReject?.(failure);
+        this.pendingRewardReject?.(failure);
+      });
+      await runAdOperation(
+        Promise.race([showStarted, showCall]),
+        AD_PRESENT_TIMEOUT_MS,
+        "admob/rewarded-presentation-timeout",
+      );
+      const rewardItem = await runAdOperation(
+        Promise.race([showCall, rewardEvent]),
+        AD_REWARD_TIMEOUT_MS,
+        "admob/rewarded-completion-timeout",
+      );
       this.loaded = false;
       const sdkConfirmedReward =
         this.rewarded || Math.max(Number(rewardItem?.amount) || 0, 0) > 0;
@@ -251,6 +379,11 @@ class AdManager {
       };
       if (onAdCompleted) onAdCompleted(result);
       return result;
+    } finally {
+      this.pendingShowResolve = null;
+      this.pendingShowReject = null;
+      this.pendingRewardResolve = null;
+      this.pendingRewardReject = null;
     }
   }
 }

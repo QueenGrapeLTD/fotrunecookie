@@ -21,8 +21,6 @@ import {
   OAuthProvider,
   signOut as firebaseSignOut,
   onAuthStateChanged,
-  setPersistence,
-  browserLocalPersistence,
 } from "firebase/auth";
 import { Capacitor } from "@capacitor/core";
 import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
@@ -116,11 +114,10 @@ if (appCheckEnabled && appCheckSiteKey) {
 }
 
 export const auth = getAuth(app);
-const authPersistenceReady = setPersistence(auth, browserLocalPersistence).catch(
-  (error) => {
-    console.warn("Persistent authentication could not be enabled:", error?.code);
-  },
-);
+// getAuth() already initializes the browser persistence hierarchy. Calling
+// setPersistence() again can remain pending inside WKWebView and used to block
+// Apple, Google, anonymous auth, and every feature waiting for a user session.
+const authPersistenceReady = Promise.resolve(auth);
 // Auto-detect networks/proxies that interrupt Firestore's WebChannel transport.
 // This is especially useful for localhost development and restrictive mobile
 // networks, where the SDK can otherwise spend several seconds reconnecting.
@@ -622,12 +619,6 @@ async function requestNativeGoogleCredential() {
 }
 
 async function signInNatively(provider) {
-  await runAuthOperation(
-    authPersistenceReady,
-    3000,
-    "auth/persistence-timeout",
-  );
-
   let nativeResult;
   if (provider === "apple") {
     nativeResult = await runAuthOperation(
@@ -666,20 +657,12 @@ async function signInNatively(provider) {
         nativeCredential.accessToken || undefined,
       );
 
-  // Anonymous data is device-local. Switching the JS SDK directly to the
-  // selected provider avoids a second native Firebase session and the stalled
-  // native-token exchange observed on physical iOS devices.
-  if (auth.currentUser?.isAnonymous) {
-    await runAuthOperation(
-      firebaseSignOut(auth),
-      3000,
-      "auth/anonymous-signout-timeout",
-    );
-  }
-
+  // signInWithCredential replaces the anonymous JS session directly. An
+  // explicit sign-out adds another WebView persistence operation and can leave
+  // the provider flow waiting after the native account picker has completed.
   const result = await runAuthOperation(
     signInWithCredential(auth, credential),
-    15000,
+    20000,
     `auth/${provider}-web-session-timeout`,
   );
   return preserveNativeAppleDisplayName(result, nativeResult, provider);
@@ -687,7 +670,11 @@ async function signInNatively(provider) {
 
 async function resetFailedNativeSocialSession() {
   if (!isNativeMobileAuthRuntime()) return;
-  await FirebaseAuthentication.signOut().catch(() => {});
+  await runAuthOperation(
+    FirebaseAuthentication.signOut(),
+    2000,
+    "auth/native-reset-timeout",
+  ).catch(() => {});
 }
 
 export async function signInWithGoogle() {

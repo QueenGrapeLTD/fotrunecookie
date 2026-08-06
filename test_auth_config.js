@@ -15,6 +15,10 @@ const adminHtml = fs.readFileSync(new URL('./admin.html', import.meta.url), 'utf
 const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
 const styles = fs.readFileSync(new URL('./style.css', import.meta.url), 'utf8');
 const mainSource = fs.readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+const appStoreCheckSource = fs.readFileSync(
+  new URL('./scripts/app-store-check.js', import.meta.url),
+  'utf8',
+);
 const xcodeProject = fs.readFileSync(
   new URL('./ios/App/App.xcodeproj/project.pbxproj', import.meta.url),
   'utf8',
@@ -88,7 +92,7 @@ test('iOS target is entitled and configured for Sign in with Apple', () => {
   assert.match(iosEntitlements, /<string>Default<\/string>/);
   assert.match(xcodeProject, /CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements/);
   assert.match(xcodeProject, /com\.apple\.SignInWithApple/);
-  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 9/);
+  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 10/);
   assert.match(xcodeProject, /TARGETED_DEVICE_FAMILY = "1,2"/);
 });
 
@@ -131,7 +135,8 @@ test('rapid cookie taps do not trigger iOS double-tap page zoom', () => {
 });
 
 test('mobile sessions restore locally before creating a new anonymous user', () => {
-  assert.match(authSource, /setPersistence\(auth,\s*browserLocalPersistence\)/);
+  assert.match(authSource, /const authPersistenceReady = Promise\.resolve\(auth\)/);
+  assert.doesNotMatch(authSource, /\n\s*setPersistence,\n/);
   assert.match(authSource, /const restoredUser = await initialAuthState/);
   assert.match(authSource, /ACCOUNT_STATE_CACHE_MS = 30 \* 1000/);
   assert.match(authSource, /PROFILE_CACHE_MS = 15 \* 60 \* 1000/);
@@ -140,11 +145,12 @@ test('mobile sessions restore locally before creating a new anonymous user', () 
   assert.match(authSource, /authProvider/);
 });
 
-test('social users replace the local anonymous session without a second native auth', () => {
-  assert.match(authSource, /auth\.currentUser\?\.isAnonymous/);
-  assert.match(authSource, /firebaseSignOut\(auth\)/);
+test('social users replace the local anonymous session without a persistence gate', () => {
   assert.match(authSource, /signInWithCredential\(auth, credential\)/);
   assert.match(authSource, /skipNativeAuth:\s*true/);
+  assert.doesNotMatch(authSource, /auth\/persistence-timeout/);
+  assert.doesNotMatch(authSource, /auth\/anonymous-signout-timeout/);
+  assert.match(authSource, /auth\/native-reset-timeout/);
 });
 
 test('anonymous bootstrap does not wait for remote account hydration', () => {
@@ -228,6 +234,7 @@ test('premium delivery starts from approved content with a safe AI adaptation fa
 
 test('all runtime Firebase clients are locked to the production project', () => {
   assert.match(authSource, /EXPECTED_FIREBASE_PROJECT_ID = "fortunecookieai-prod"/);
+  assert.match(appStoreCheckSource, /expectedFirebaseIosAppId = '1:53381061591:ios:a47ef8928c618a83d04992'/);
   assert.doesNotMatch(authSource, /atonumus-fortunecookie/);
 });
 
