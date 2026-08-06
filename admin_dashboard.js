@@ -44,7 +44,7 @@ async function initAdminDashboard() {
   showToast('🔄 Kullanıcılar ve Sistem Verileri Yükleniyor...');
 
   // 1. Fetch Config
-  appConfig = await getAppSettingsFromCloud();
+  appConfig = await getAppSettingsFromCloud(true);
   if (inputInstagramHandle) inputInstagramHandle.value = appConfig.instagramHandle || '@fortunecookie.ai';
   if (inputAppName) inputAppName.value = appConfig.appName || 'Fortune Cookie AI';
   if (inputFreeLimit) inputFreeLimit.value = appConfig.freeDailyLimit || 1;
