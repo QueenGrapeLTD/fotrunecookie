@@ -8,6 +8,7 @@ import {
   getAuth,
   signInAnonymously,
   signInWithPopup,
+  signInWithCredential,
   signInWithCustomToken,
   linkWithCredential,
   createUserWithEmailAndPassword,
@@ -609,7 +610,10 @@ async function requestNativeGoogleCredential() {
     try {
       return await FirebaseAuthentication.signInWithGoogle({
         useCredentialManager: true,
-        skipNativeAuth: false,
+        // The Capacitor WebView uses the Firebase JavaScript SDK. Request the
+        // Google credential without creating a second native Firebase session,
+        // then sign that credential into the WebView directly below.
+        skipNativeAuth: true,
       });
     } catch (error) {
       credentialManagerError = error;
@@ -634,8 +638,52 @@ async function requestNativeGoogleCredential() {
   );
   return FirebaseAuthentication.signInWithGoogle({
     useCredentialManager: false,
-    skipNativeAuth: false,
+    skipNativeAuth: true,
   });
+}
+
+async function signInGoogleCredentialIntoWebView(nativeResult) {
+  const idToken = cleanString(nativeResult?.credential?.idToken, 8192);
+  if (!idToken) {
+    throw new Error("auth/google-credential-missing");
+  }
+
+  const credential = GoogleAuthProvider.credential(idToken);
+  await waitForAuthPersistenceAfterNativeCredential();
+
+  // Upgrade a new anonymous account in place. For a returning Google user the
+  // credential already belongs to another UID, so remove the temporary
+  // anonymous record and explicitly switch to the permanent account.
+  if (auth.currentUser?.isAnonymous) {
+    const anonymousUser = auth.currentUser;
+    try {
+      return await linkWithCredential(anonymousUser, credential);
+    } catch (error) {
+      if (
+        error?.code !== "auth/credential-already-in-use" &&
+        error?.code !== "auth/email-already-in-use"
+      ) {
+        throw error;
+      }
+
+      const deletedAnonymousUser = await settleAuthOperation(
+        deleteUser(anonymousUser),
+        3000,
+        "Anonymous account cleanup",
+      );
+      if (!deletedAnonymousUser) {
+        await settleAuthOperation(
+          firebaseSignOut(auth),
+          1500,
+          "Anonymous account sign-out",
+        );
+      }
+    }
+  } else if (auth.currentUser) {
+    await firebaseSignOut(auth);
+  }
+
+  return signInWithCredential(auth, credential);
 }
 
 async function bridgeNativeSessionIntoWebView(nativeResult, provider) {
@@ -703,6 +751,7 @@ async function signInNatively(provider) {
     // devices even though account selection itself succeeded. Keep the legacy
     // flow only as a compatibility fallback for older Android environments.
     nativeResult = await requestNativeGoogleCredential();
+    return signInGoogleCredentialIntoWebView(nativeResult);
   }
   return bridgeNativeSessionIntoWebView(nativeResult, provider);
 }

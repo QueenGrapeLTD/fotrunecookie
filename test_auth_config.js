@@ -60,7 +60,9 @@ test('native Google and Apple providers bridge into Firebase Auth', () => {
   assert.match(authSource, /auth\/network-request-failed/);
   assert.match(authSource, /Credential Manager compatibility failure; trying legacy Google Sign-In/);
   assert.match(authSource, /useCredentialManager:\s*false/);
-  assert.match(authSource, /skipNativeAuth:\s*false/);
+  assert.match(authSource, /skipNativeAuth:\s*true/);
+  assert.match(authSource, /GoogleAuthProvider\.credential\(idToken\)/);
+  assert.match(authSource, /signInWithCredential\(auth, credential\)/);
   assert.match(authSource, /preserveNativeAppleDisplayName/);
   assert.match(authSource, /nativeResult\?\.user\?\.displayName/);
   assert.match(authSource, /auth\/native-google-failed/);
@@ -73,11 +75,7 @@ test('native Google and Apple providers bridge into Firebase Auth', () => {
     nativeSignInSource.indexOf('FirebaseAuthentication.signInWithApple') <
       nativeSignInSource.indexOf('bridgeNativeSessionIntoWebView'),
   );
-  assert.ok(
-    nativeSignInSource.indexOf('requestNativeGoogleCredential()') <
-      nativeSignInSource.indexOf('bridgeNativeSessionIntoWebView'),
-  );
-  assert.doesNotMatch(authSource, /GoogleAuthProvider\.credential\(/);
+  assert.match(nativeSignInSource, /return signInGoogleCredentialIntoWebView\(nativeResult\)/);
   assert.match(authSource, /FirebaseAuthentication\.signOut/);
 });
 
@@ -129,6 +127,8 @@ test('returning social users do not leave orphan anonymous Auth accounts', () =>
   assert.match(authSource, /const anonymousUser = auth\.currentUser/);
   assert.match(authSource, /deleteUser\(anonymousUser\)/);
   assert.match(authSource, /Anonymous account cleanup/);
+  assert.match(authSource, /linkWithCredential\(anonymousUser, credential\)/);
+  assert.match(authSource, /signInWithCredential\(auth, credential\)/);
   assert.match(authSource, /signInWithCustomToken\(auth, customToken\)/);
 });
 
