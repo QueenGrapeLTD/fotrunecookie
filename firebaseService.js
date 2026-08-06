@@ -8,7 +8,7 @@ import {
   getAuth,
   signInAnonymously,
   signInWithPopup,
-  signInWithCustomToken,
+  signInWithCredential,
   linkWithCredential,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -563,36 +563,19 @@ function waitForAuthRetry(delayMs) {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
-async function waitForAuthPersistenceAfterNativeCredential(timeoutMs = 1500) {
-  let timeoutId;
-  const timedOut = await Promise.race([
-    authPersistenceReady.then(() => false),
-    new Promise((resolve) => {
-      timeoutId = setTimeout(() => resolve(true), timeoutMs);
-    }),
-  ]);
-  clearTimeout(timeoutId);
-  if (timedOut) {
-    console.warn(
-      "Firebase persistence is still initializing; continuing native social sign-in.",
-    );
-  }
-}
-
-async function settleAuthOperation(operation, timeoutMs, label) {
+async function runAuthOperation(operation, timeoutMs, errorCode) {
   let timeoutId;
   try {
-    const completed = await Promise.race([
-      Promise.resolve(operation).then(() => true),
-      new Promise((resolve) => {
-        timeoutId = setTimeout(() => resolve(false), timeoutMs);
+    return await Promise.race([
+      Promise.resolve(operation),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          const error = new Error(errorCode);
+          error.code = errorCode;
+          reject(error);
+        }, timeoutMs);
       }),
     ]);
-    if (!completed) console.warn(`${label} timed out; continuing sign-in.`);
-    return completed;
-  } catch (error) {
-    console.warn(`${label} failed; continuing sign-in.`, error?.code || error?.message);
-    return false;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -609,7 +592,7 @@ async function requestNativeGoogleCredential() {
     try {
       return await FirebaseAuthentication.signInWithGoogle({
         useCredentialManager: true,
-        skipNativeAuth: false,
+        skipNativeAuth: true,
       });
     } catch (error) {
       credentialManagerError = error;
@@ -634,77 +617,72 @@ async function requestNativeGoogleCredential() {
   );
   return FirebaseAuthentication.signInWithGoogle({
     useCredentialManager: false,
-    skipNativeAuth: false,
+    skipNativeAuth: true,
   });
-}
-
-async function bridgeNativeSessionIntoWebView(nativeResult, provider) {
-  const nativeUid = cleanString(nativeResult?.user?.uid, 128);
-  if (!nativeUid) {
-    throw new Error(`auth/${provider}-native-user-missing`);
-  }
-
-  const tokenResult = await FirebaseAuthentication.getIdToken({
-    forceRefresh: true,
-  });
-  if (!tokenResult?.token) {
-    throw new Error(`auth/${provider}-native-token-missing`);
-  }
-
-  const exchangeNativeAuthToken = httpsCallable(
-    functions,
-    "exchangeNativeAuthToken",
-  );
-  const exchangeResult = await exchangeNativeAuthToken({
-    nativeIdToken: tokenResult.token,
-  });
-  const customToken = exchangeResult?.data?.customToken;
-  if (!customToken) {
-    throw new Error("auth/native-session-bridge-failed");
-  }
-
-  await waitForAuthPersistenceAfterNativeCredential();
-  if (auth.currentUser?.isAnonymous) {
-    const anonymousUser = auth.currentUser;
-    const deletedAnonymousUser = await settleAuthOperation(
-      deleteUser(anonymousUser),
-      2000,
-      "Anonymous account cleanup",
-    );
-    if (!deletedAnonymousUser) {
-      await settleAuthOperation(
-        firebaseSignOut(auth),
-        1500,
-        "Anonymous account sign-out",
-      );
-    }
-  } else if (auth.currentUser && auth.currentUser.uid !== nativeUid) {
-    await firebaseSignOut(auth);
-  }
-
-  const result = await signInWithCustomToken(auth, customToken);
-  if (result.user.uid !== nativeUid) {
-    await firebaseSignOut(auth).catch(() => {});
-    throw new Error("auth/native-session-user-mismatch");
-  }
-  return preserveNativeAppleDisplayName(result, nativeResult, provider);
 }
 
 async function signInNatively(provider) {
+  await runAuthOperation(
+    authPersistenceReady,
+    3000,
+    "auth/persistence-timeout",
+  );
+
   let nativeResult;
   if (provider === "apple") {
-    nativeResult = await FirebaseAuthentication.signInWithApple({
-      skipNativeAuth: false,
-    });
+    nativeResult = await runAuthOperation(
+      FirebaseAuthentication.signInWithApple({ skipNativeAuth: true }),
+      45000,
+      "auth/apple-provider-timeout",
+    );
   } else {
     // Credential Manager returns the Google ID token directly. The legacy
     // GoogleSignIn path also requests a separate OAuth access token after the
     // account picker; that second request can fail on physical/Play-installed
     // devices even though account selection itself succeeded. Keep the legacy
     // flow only as a compatibility fallback for older Android environments.
-    nativeResult = await requestNativeGoogleCredential();
+    nativeResult = await runAuthOperation(
+      requestNativeGoogleCredential(),
+      45000,
+      "auth/google-provider-timeout",
+    );
   }
-  return bridgeNativeSessionIntoWebView(nativeResult, provider);
+
+  const nativeCredential = nativeResult?.credential;
+  if (!nativeCredential?.idToken) {
+    const error = new Error(`auth/${provider}-credential-missing`);
+    error.code = `auth/${provider}-credential-missing`;
+    throw error;
+  }
+
+  const credential = provider === "apple"
+    ? appleProvider.credential({
+        idToken: nativeCredential.idToken,
+        rawNonce: nativeCredential.nonce,
+        accessToken: nativeCredential.accessToken,
+      })
+    : GoogleAuthProvider.credential(
+        nativeCredential.idToken,
+        nativeCredential.accessToken || undefined,
+      );
+
+  // Anonymous data is device-local. Switching the JS SDK directly to the
+  // selected provider avoids a second native Firebase session and the stalled
+  // native-token exchange observed on physical iOS devices.
+  if (auth.currentUser?.isAnonymous) {
+    await runAuthOperation(
+      firebaseSignOut(auth),
+      3000,
+      "auth/anonymous-signout-timeout",
+    );
+  }
+
+  const result = await runAuthOperation(
+    signInWithCredential(auth, credential),
+    15000,
+    `auth/${provider}-web-session-timeout`,
+  );
+  return preserveNativeAppleDisplayName(result, nativeResult, provider);
 }
 
 async function resetFailedNativeSocialSession() {

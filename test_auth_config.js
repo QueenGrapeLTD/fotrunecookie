@@ -48,36 +48,38 @@ test('native Google and Apple providers bridge into Firebase Auth', () => {
     capacitorConfig.plugins.FirebaseAuthentication.providers,
     ['google.com', 'apple.com'],
   );
-  assert.equal(capacitorConfig.plugins.FirebaseAuthentication.skipNativeAuth, false);
-  assert.match(authSource, /signInWithCustomToken/);
-  assert.match(authSource, /FirebaseAuthentication\.getIdToken/);
-  assert.match(authSource, /httpsCallable\(\s*functions,\s*"exchangeNativeAuthToken"/);
-  assert.match(authSource, /nativeIdToken:\s*tokenResult\.token/);
-  assert.match(authSource, /result\.user\.uid !== nativeUid/);
+  assert.equal(capacitorConfig.plugins.FirebaseAuthentication.skipNativeAuth, true);
+  assert.match(authSource, /signInWithCredential/);
+  assert.match(authSource, /runAuthOperation/);
+  assert.match(authSource, /auth\/apple-provider-timeout/);
+  assert.match(authSource, /auth\/google-provider-timeout/);
+  assert.match(authSource, /auth\/\$\{provider\}-web-session-timeout/);
   assert.match(authSource, /useCredentialManager:\s*true/);
   assert.match(authSource, /isRetryableGoogleNetworkError/);
   assert.match(authSource, /attempt < 2/);
   assert.match(authSource, /auth\/network-request-failed/);
   assert.match(authSource, /Credential Manager compatibility failure; trying legacy Google Sign-In/);
   assert.match(authSource, /useCredentialManager:\s*false/);
-  assert.match(authSource, /skipNativeAuth:\s*false/);
+  assert.match(authSource, /skipNativeAuth:\s*true/);
   assert.match(authSource, /preserveNativeAppleDisplayName/);
   assert.match(authSource, /nativeResult\?\.user\?\.displayName/);
   assert.match(authSource, /auth\/native-google-failed/);
-  assert.match(authSource, /waitForAuthPersistenceAfterNativeCredential/);
+  assert.match(authSource, /GoogleAuthProvider\.credential\(/);
+  assert.match(authSource, /appleProvider\.credential\(/);
   const nativeSignInSource = authSource.slice(
     authSource.indexOf('async function signInNatively'),
     authSource.indexOf('export async function signInWithGoogle'),
   );
   assert.ok(
     nativeSignInSource.indexOf('FirebaseAuthentication.signInWithApple') <
-      nativeSignInSource.indexOf('bridgeNativeSessionIntoWebView'),
+      nativeSignInSource.indexOf('signInWithCredential'),
   );
   assert.ok(
     nativeSignInSource.indexOf('requestNativeGoogleCredential()') <
-      nativeSignInSource.indexOf('bridgeNativeSessionIntoWebView'),
+      nativeSignInSource.indexOf('signInWithCredential'),
   );
-  assert.doesNotMatch(authSource, /GoogleAuthProvider\.credential\(/);
+  assert.doesNotMatch(authSource, /exchangeNativeAuthToken/);
+  assert.doesNotMatch(authSource, /FirebaseAuthentication\.getIdToken/);
   assert.match(authSource, /FirebaseAuthentication\.signOut/);
 });
 
@@ -86,7 +88,7 @@ test('iOS target is entitled and configured for Sign in with Apple', () => {
   assert.match(iosEntitlements, /<string>Default<\/string>/);
   assert.match(xcodeProject, /CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements/);
   assert.match(xcodeProject, /com\.apple\.SignInWithApple/);
-  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 7/);
+  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 8/);
   assert.match(xcodeProject, /TARGETED_DEVICE_FAMILY = "1,2"/);
 });
 
@@ -104,6 +106,14 @@ test('iOS web layout respects notch and home indicator safe areas', () => {
   assert.match(styles, /safe-area-inset-bottom/);
   assert.match(styles, /calc\(20px \+ var\(--safe-area-top\)\)/);
   assert.match(styles, /bottom: calc\(30px \+ var\(--safe-area-bottom\)\)/);
+});
+
+test('iOS profile modal stays fixed and does not focus-zoom form controls', () => {
+  assert.match(styles, /#modal-profile\s*\{[^}]*align-items:\s*stretch/s);
+  assert.match(styles, /\.profile-modal-box\s*\{[^}]*height:\s*100%/s);
+  assert.match(styles, /\.profile-modal-box \.modal-body\s*\{[^}]*min-height:\s*0/s);
+  assert.match(styles, /\.profile-modal-box input,[\s\S]*font-size:\s*16px !important/);
+  assert.match(styles, /overscroll-behavior:\s*none/);
 });
 
 test('rapid cookie taps do not trigger iOS double-tap page zoom', () => {
@@ -130,11 +140,19 @@ test('mobile sessions restore locally before creating a new anonymous user', () 
   assert.match(authSource, /authProvider/);
 });
 
-test('returning social users do not leave orphan anonymous Auth accounts', () => {
-  assert.match(authSource, /const anonymousUser = auth\.currentUser/);
-  assert.match(authSource, /deleteUser\(anonymousUser\)/);
-  assert.match(authSource, /Anonymous account cleanup/);
-  assert.match(authSource, /signInWithCustomToken\(auth, customToken\)/);
+test('social users replace the local anonymous session without a second native auth', () => {
+  assert.match(authSource, /auth\.currentUser\?\.isAnonymous/);
+  assert.match(authSource, /firebaseSignOut\(auth\)/);
+  assert.match(authSource, /signInWithCredential\(auth, credential\)/);
+  assert.match(authSource, /skipNativeAuth:\s*true/);
+});
+
+test('anonymous bootstrap does not wait for remote account hydration', () => {
+  assert.match(mainSource, /getProfile\(currentLang\),\s*800/s);
+  assert.match(mainSource, /ensureFreemiumSession\(\),\s*1200/s);
+  assert.match(mainSource, /void settleWithTimeout\(\s*getAppSettingsFromCloud\(\)/s);
+  assert.match(mainSource, /void settleWithTimeout\(\s*initialUserHydration/s);
+  assert.match(mainSource, /markInitialUserHydrationReady\(\);\s*updateProfileBadge\(\)/s);
 });
 
 test('admin premium overrides survive RevenueCat synchronization', () => {
@@ -225,7 +243,7 @@ test('successful social credentials render the authenticated account without wai
   assert.match(mainSource, /authLoggedBox\?\.classList\.remove\('hidden'\)/);
   assert.match(mainSource, /modalProfile\?\.classList\.add\('hidden'\)/);
   assert.match(authSource, /Auth profile hydration timed out; rendering the signed-in user immediately/);
-  assert.match(authSource, /Anonymous account cleanup/);
+  assert.match(authSource, /signInWithCredential\(auth, credential\)/);
 });
 
 test('email authentication requires verification and preserves anonymous registration state', () => {
