@@ -88,7 +88,7 @@ test('iOS target is entitled and configured for Sign in with Apple', () => {
   assert.match(iosEntitlements, /<string>Default<\/string>/);
   assert.match(xcodeProject, /CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements/);
   assert.match(xcodeProject, /com\.apple\.SignInWithApple/);
-  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 8/);
+  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 9/);
   assert.match(xcodeProject, /TARGETED_DEVICE_FAMILY = "1,2"/);
 });
 
