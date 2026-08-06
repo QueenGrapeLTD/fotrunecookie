@@ -973,6 +973,17 @@ async function getVerifiedAccountState(forceRefresh = false) {
   if (!forceRefresh && accountStateCache) return accountStateCache;
   const serverState = await getAccountStateFromServer(forceRefresh);
   if (serverState) {
+    const serverLimits = serverState.limits || {};
+    const freeDailyLimit = Number(serverLimits.freeDailyLimit);
+    const premiumDailyLimit = Number(serverLimits.premiumDailyLimit);
+    if (Number.isFinite(freeDailyLimit) && Number.isFinite(premiumDailyLimit)) {
+      appSettings = {
+        ...appSettings,
+        freeDailyLimit: Math.min(Math.max(Math.trunc(freeDailyLimit), 1), 20),
+        premiumDailyLimit: Math.min(Math.max(Math.trunc(premiumDailyLimit), 1), 50),
+        configVersion: Math.max(Number(serverLimits.configVersion) || 0, 0),
+      };
+    }
     const isPremium =
       serverState.isPremium === true ||
       serverState.membershipTier === 'premium';

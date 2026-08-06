@@ -28,6 +28,7 @@ const GEMINI_PROVIDER = "Gemini-3.1-Flash-Lite";
 const GEMINI_MAX_OUTPUT_TOKENS = 220;
 const ADMOB_KEYS_URL =
   "https://www.gstatic.com/admob/reward/verifier-keys.json";
+const DEFAULT_FREE_DAILY_LIMIT = 1;
 const DEFAULT_PREMIUM_DAILY_LIMIT = 5;
 const ADMIN_PREMIUM_DAILY_LIMIT = 50;
 const db = getFirestore();
@@ -592,20 +593,36 @@ function istanbulDayKey(date = new Date()) {
   }).format(date);
 }
 
-async function getDailyLimit(isAdmin = false) {
-  if (isAdmin) return ADMIN_PREMIUM_DAILY_LIMIT;
+function normalizedAppSettings(data = {}) {
+  return {
+    freeDailyLimit: Math.min(
+      Math.max(Math.trunc(Number(data.freeDailyLimit) || DEFAULT_FREE_DAILY_LIMIT), 1),
+      20,
+    ),
+    premiumDailyLimit: Math.min(
+      Math.max(Math.trunc(Number(data.premiumDailyLimit) || DEFAULT_PREMIUM_DAILY_LIMIT), 1),
+      50,
+    ),
+    configVersion: Math.max(Number(data.configVersion) || 0, 0),
+  };
+}
+
+async function getServerAppSettings() {
   try {
     const settings = await db.doc("settings/app_config").get();
-    const configuredLimit = Number(settings.data()?.premiumDailyLimit);
-    if (Number.isFinite(configuredLimit)) {
-      return Math.min(Math.max(Math.trunc(configuredLimit), 1), 50);
-    }
+    return normalizedAppSettings(settings.data());
   } catch (error) {
-    console.warn("Premium daily limit could not be read", {
+    console.warn("Application settings could not be read", {
       message: error?.message,
     });
+    return normalizedAppSettings();
   }
-  return DEFAULT_PREMIUM_DAILY_LIMIT;
+}
+
+async function getDailyLimit(isAdmin = false) {
+  if (isAdmin) return ADMIN_PREMIUM_DAILY_LIMIT;
+  const settings = await getServerAppSettings();
+  return settings.premiumDailyLimit;
 }
 
 function normalizeRequestId(value) {
@@ -1121,11 +1138,14 @@ exports.getAccountState = onCall(
     const isReviewer = request.auth?.token?.storeReviewer === true;
     const hasExtendedAccess = isAdmin || isReviewer;
     const day = istanbulDayKey();
-    const [userSnap, usageSnap, limit] = await Promise.all([
+    const [userSnap, usageSnap, serverSettings] = await Promise.all([
       db.doc(`users/${uid}`).get(),
       db.doc(`_usage/${uid}_${day}`).get(),
-      getDailyLimit(hasExtendedAccess),
+      getServerAppSettings(),
     ]);
+    const limit = hasExtendedAccess
+      ? ADMIN_PREMIUM_DAILY_LIMIT
+      : serverSettings.premiumDailyLimit;
     const used = Math.min(
       Math.max(Number(usageSnap.data()?.count || 0), 0),
       limit,
@@ -1155,6 +1175,7 @@ exports.getAccountState = onCall(
         remaining: Math.max(limit - used, 0),
         day,
       },
+      limits: serverSettings,
     };
   },
 );
@@ -2015,23 +2036,44 @@ exports.adminListUsers = onCall(
       if (!knownUids.has(uid)) users.push(publicUserRecord(null, profile));
     }
 
-    // Backfill the readable directory for existing accounts and clean up the
-    // former users/{email} console indexes opportunistically.
-    const directoryUsers = users.filter((item) => emailIndexDocumentId(item.email));
-    for (let offset = 0; offset < directoryUsers.length; offset += 400) {
+    // Make Auth the authoritative admin directory and opportunistically create
+    // missing UID profiles. This keeps users visible even when first-login
+    // profile hydration was interrupted on a mobile device.
+    for (let offset = 0; offset < users.length; offset += 200) {
       const batch = db.batch();
-      for (const user of directoryUsers.slice(offset, offset + 400)) {
-        batch.set(
-          db.doc(`user_directory/${emailIndexDocumentId(user.email)}`),
-          {
-            uid: user.uid,
-            email: user.email.toLowerCase(),
-            displayName: user.displayName,
-            sourceProfilePath: `users/${user.uid}`,
-            updatedAt: FieldValue.serverTimestamp(),
-          },
-          { merge: true },
-        );
+      for (const user of users.slice(offset, offset + 200)) {
+        const profileExists = profiles.has(user.uid);
+        batch.set(db.doc(`users/${user.uid}`), {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+          authProvider: user.authProvider,
+          emailVerified: user.emailVerified,
+          lastLogin: user.lastLogin,
+          updatedAt: FieldValue.serverTimestamp(),
+          ...(!profileExists ? {
+            isPremium: false,
+            membershipTier: "free",
+            premiumSource: "none",
+            createdAt: user.createdAt,
+          } : {}),
+        }, { merge: true });
+
+        const emailId = emailIndexDocumentId(user.email);
+        if (emailId) {
+          batch.set(
+            db.doc(`user_directory/${emailId}`),
+            {
+              uid: user.uid,
+              email: user.email.toLowerCase(),
+              displayName: user.displayName,
+              sourceProfilePath: `users/${user.uid}`,
+              updatedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        }
       }
       await batch.commit();
     }
@@ -2039,7 +2081,15 @@ exports.adminListUsers = onCall(
 
     users.sort((a, b) =>
       String(b.lastLogin || b.createdAt).localeCompare(String(a.lastLogin || a.createdAt)));
-    return { success: true, users };
+    return {
+      success: true,
+      users,
+      meta: {
+        projectId: process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "",
+        authUserCount: authUsers.length,
+        profileCount: profiles.size,
+      },
+    };
   },
 );
 

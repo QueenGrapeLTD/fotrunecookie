@@ -133,10 +133,11 @@ let lastKnownAccountState = null;
 let anonymousSessionPromise = null;
 const userSyncPromises = new Map();
 const LOGIN_WRITE_INTERVAL_MS = 24 * 60 * 60 * 1000;
-const ACCOUNT_STATE_CACHE_MS = 5 * 60 * 1000;
+const ACCOUNT_STATE_CACHE_MS = 30 * 1000;
 const PROFILE_CACHE_MS = 15 * 60 * 1000;
 const APP_SETTINGS_CACHE_MS = 5 * 60 * 1000;
 const CACHE_PREFIX = "fc_cache_v2";
+const APP_SETTINGS_CACHE_KEY = `app-settings:${firebaseConfig.projectId}`;
 
 function readLocalCache(key, maxAgeMs, validator = () => true) {
   try {
@@ -1157,6 +1158,9 @@ export async function currentUserIsAdmin() {
 
 export async function getAllUsersFromFirestore() {
   const data = await callAdminFunction("adminListUsers");
+  if (data?.meta) {
+    console.info("Admin user directory loaded", data.meta);
+  }
   return Array.isArray(data?.users)
     ? data.users.map((user) => ({ ...user, fortuneHistory: [] }))
     : [];
@@ -1198,15 +1202,20 @@ export async function deleteMyAccountFromCloud() {
   return result?.data?.success === true;
 }
 
-export async function getAppSettingsFromCloud() {
-  const cachedSettings = readLocalCache("app-settings", APP_SETTINGS_CACHE_MS);
-  if (cachedSettings) return cachedSettings;
+export async function getAppSettingsFromCloud(forceRefresh = false) {
+  if (!forceRefresh) {
+    const cachedSettings = readLocalCache(
+      APP_SETTINGS_CACHE_KEY,
+      APP_SETTINGS_CACHE_MS,
+    );
+    if (cachedSettings) return cachedSettings;
+  }
 
   try {
     const docSnap = await getDocFromServer(doc(db, "settings", "app_config"));
     if (docSnap.exists()) {
       const settings = docSnap.data();
-      writeLocalCache("app-settings", settings);
+      writeLocalCache(APP_SETTINGS_CACHE_KEY, settings);
       return settings;
     }
   } catch (error) {
@@ -1233,7 +1242,7 @@ export async function saveAppSettingsToCloud(settings) {
   const result = await callAdminFunction("adminUpdateAppSettings", payload);
   if (result?.success !== true) return false;
   const savedSettings = result.settings || payload;
-  writeLocalCache("app-settings", savedSettings);
+  writeLocalCache(APP_SETTINGS_CACHE_KEY, savedSettings);
   return true;
 }
 

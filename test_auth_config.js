@@ -118,7 +118,7 @@ test('rapid cookie taps do not trigger iOS double-tap page zoom', () => {
 test('mobile sessions restore locally before creating a new anonymous user', () => {
   assert.match(authSource, /setPersistence\(auth,\s*browserLocalPersistence\)/);
   assert.match(authSource, /const restoredUser = await initialAuthState/);
-  assert.match(authSource, /ACCOUNT_STATE_CACHE_MS = 5 \* 60 \* 1000/);
+  assert.match(authSource, /ACCOUNT_STATE_CACHE_MS = 30 \* 1000/);
   assert.match(authSource, /PROFILE_CACHE_MS = 15 \* 60 \* 1000/);
   assert.match(authSource, /APP_SETTINGS_CACHE_MS = 5 \* 60 \* 1000/);
   assert.match(authSource, /cachedProfileMatchesUser/);
@@ -157,6 +157,9 @@ test('admin mutations are validated by callable server operations', () => {
   assert.match(functionsSource, /deleteUserData\(uid\)/);
   assert.match(functionsSource, /exports\.adminGetUserHistory = onCall/);
   assert.match(functionsSource, /exports\.adminListUsers = onCall/);
+  assert.match(functionsSource, /getAuth\(\)\.listUsers\(1000, pageToken\)/);
+  assert.match(functionsSource, /db\.doc\(`users\/\$\{user\.uid\}`\)/);
+  assert.match(functionsSource, /authUserCount: authUsers\.length/);
   assert.match(functionsSource, /exports\.adminUpdateAppSettings = onCall/);
   assert.match(authSource, /callAdminFunction\("adminListUsers"\)/);
   assert.match(authSource, /callAdminFunction\("adminUpdateAppSettings"/);
@@ -165,6 +168,10 @@ test('admin mutations are validated by callable server operations', () => {
 test('server settings and trusted history are authoritative', () => {
   assert.match(functionsSource, /settings\/app_config/);
   assert.match(functionsSource, /premiumDailyLimit/);
+  assert.match(functionsSource, /limits: serverSettings/);
+  assert.match(mainSource, /const serverLimits = serverState\.limits \|\| \{\}/);
+  assert.match(mainSource, /configVersion: Math\.max\(Number\(serverLimits\.configVersion\)/);
+  assert.match(authSource, /APP_SETTINGS_CACHE_KEY = `app-settings:\$\{firebaseConfig\.projectId\}`/);
   assert.match(functionsSource, /users\/\$\{uid\}\/fortunes\/\$\{requestId\}/);
   assert.match(authSource, /fortuneItem\?\.requestId/);
   assert.match(authSource, /getMyFortuneHistory/);
