@@ -45,7 +45,7 @@ async function initAdminDashboard() {
 
   // 1. Fetch Config
   appConfig = await getAppSettingsFromCloud(true);
-  if (inputInstagramHandle) inputInstagramHandle.value = appConfig.instagramHandle || '@fortunecookie.ai';
+  if (inputInstagramHandle) inputInstagramHandle.value = appConfig.instagramHandle || '@fortunecookieai';
   if (inputAppName) inputAppName.value = appConfig.appName || 'Fortune Cookie AI';
   if (inputFreeLimit) inputFreeLimit.value = appConfig.freeDailyLimit || 1;
   if (inputPremiumLimit) inputPremiumLimit.value = appConfig.premiumDailyLimit || 5;
@@ -230,7 +230,7 @@ function setupDashboardEventListeners() {
   if (btnSaveSettings) {
     btnSaveSettings.addEventListener('click', async () => {
       const updatedConfig = {
-        instagramHandle: inputInstagramHandle ? inputInstagramHandle.value.trim() : '@fortunecookie.ai',
+        instagramHandle: inputInstagramHandle ? inputInstagramHandle.value.trim() : '@fortunecookieai',
         appName: inputAppName ? inputAppName.value.trim() : 'Fortune Cookie AI',
         freeDailyLimit: inputFreeLimit ? parseInt(inputFreeLimit.value, 10) || 1 : 1,
         premiumDailyLimit: inputPremiumLimit ? parseInt(inputPremiumLimit.value, 10) || 5 : 5

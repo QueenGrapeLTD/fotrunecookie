@@ -88,7 +88,8 @@ function fitWrappedText(ctx, text, {
 }
 
 export async function generateStoryCardCanvas({
-  quote, luckyNumbers = [], zodiacIcon, zodiacName, userName, lang = 'en'
+  quote, luckyNumbers = [], zodiacIcon, zodiacName, userName, lang = 'en',
+  brandName = 'Fortune Cookie AI', socialHandle = '@fortunecookieai'
 }) {
   const t = storyTranslations[lang] || storyTranslations.en;
   const template = await loadTemplate();
@@ -133,6 +134,19 @@ export async function generateStoryCardCanvas({
     const value = Number(number);
     ctx.fillText(value < 10 ? `0${value}` : String(value), numberCenters[index], 1432);
   });
+
+  // Permanent artwork watermark: the brand survives downloads, reposts and
+  // social platforms that discard the share-sheet caption.
+  const safeBrandName = String(brandName || 'Fortune Cookie AI').trim().slice(0, 40);
+  const safeSocialHandle = String(socialHandle || '@fortunecookieai')
+    .trim().replace(/[^@a-zA-Z0-9._]/g, '').slice(0, 40) || '@fortunecookieai';
+  ctx.fillStyle = 'rgba(255, 248, 238, 0.88)';
+  ctx.beginPath();
+  ctx.roundRect(284, 1481, 456, 39, 20);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(116, 72, 63, 0.92)';
+  ctx.font = '700 19px Outfit, Arial, sans-serif';
+  ctx.fillText(`${safeBrandName}  •  ${safeSocialHandle}`, 512, 1507);
 
   return canvas;
 }

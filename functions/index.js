@@ -31,6 +31,11 @@ const ADMOB_KEYS_URL =
 const DEFAULT_FREE_DAILY_LIMIT = 1;
 const DEFAULT_PREMIUM_DAILY_LIMIT = 5;
 const ADMIN_PREMIUM_DAILY_LIMIT = 50;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const USAGE_RETENTION_MS = 14 * DAY_MS;
+const REQUEST_RETENTION_MS = 7 * DAY_MS;
+const AD_TRANSACTION_RETENTION_MS = 30 * DAY_MS;
+const AD_REWARD_RETENTION_MS = 90 * DAY_MS;
 const db = getFirestore();
 const approvedContentCache = new Map();
 const APPROVED_CONTENT_CACHE_MS = 10 * 60 * 1000;
@@ -644,7 +649,20 @@ function usageSummary(used, limit, day) {
   };
 }
 
-async function reserveAiUsage(uid, requestId, isAdmin = false) {
+function expiresAfter(durationMs) {
+  return new Date(Date.now() + durationMs);
+}
+
+function isAnonymousRequest(request) {
+  return request.auth?.token?.firebase?.sign_in_provider === "anonymous";
+}
+
+async function reserveAiUsage(
+  uid,
+  requestId,
+  isAdmin = false,
+  isAnonymous = false,
+) {
   const limit = await getDailyLimit(isAdmin);
   const day = istanbulDayKey();
   const usageRef = db.doc(`_usage/${uid}_${day}`);
@@ -653,12 +671,17 @@ async function reserveAiUsage(uid, requestId, isAdmin = false) {
   const rewardRef = db.doc(`_ad_rewards/${uid}`);
 
   return db.runTransaction(async (transaction) => {
-    const [usageSnap, requestSnap, userSnap, rewardSnap] = await Promise.all([
-      transaction.get(usageRef),
+    const anonymousFreemium = isAnonymous && !isAdmin;
+    const [requestSnap, rewardSnap] = await Promise.all([
       transaction.get(requestRef),
-      transaction.get(userRef),
       transaction.get(rewardRef),
     ]);
+    const [usageSnap, userSnap] = anonymousFreemium
+      ? [{ exists: false, data: () => ({}) }, { exists: false, data: () => ({}) }]
+      : await Promise.all([
+          transaction.get(usageRef),
+          transaction.get(userRef),
+        ]);
     const used = Math.max(Number(usageSnap.data()?.count || 0), 0);
     const requestData = requestSnap.data() || {};
     const userData = userSnap.data() || {};
@@ -732,6 +755,7 @@ async function reserveAiUsage(uid, requestId, isAdmin = false) {
           uid,
           day,
           count: used + 1,
+          expireAt: expiresAfter(USAGE_RETENTION_MS),
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },
@@ -744,6 +768,7 @@ async function reserveAiUsage(uid, requestId, isAdmin = false) {
           day,
           credits: reward.credits - 1,
           rewardedToday: reward.rewardedToday,
+          expireAt: expiresAfter(AD_REWARD_RETENTION_MS),
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },
@@ -758,12 +783,18 @@ async function reserveAiUsage(uid, requestId, isAdmin = false) {
         accessType,
         status: "reserved",
         reservedAt: new Date(),
+        expireAt: expiresAfter(REQUEST_RETENTION_MS),
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
     );
-    return { cached: false, usage, accessType };
+    return {
+      cached: false,
+      usage,
+      accessType,
+      persistHistory: isPremium,
+    };
   });
 }
 
@@ -775,6 +806,7 @@ async function completeAiUsage(
   usage,
   modelUsage,
   content = {},
+  persistHistory = false,
 ) {
   const completedAt = new Date().toISOString();
   const metadata = {
@@ -783,7 +815,7 @@ async function completeAiUsage(
     contentSource: String(content.contentSource || "curated").slice(0, 32),
     variantType: String(content.variantType || "approved-fallback").slice(0, 32),
   };
-  await Promise.all([
+  const writes = [
     db.doc(`_usage_requests/${uid}_${requestId}`).set({
       status: "completed",
       prediction,
@@ -791,13 +823,15 @@ async function completeAiUsage(
       usage,
       modelUsage,
       ...metadata,
+      expireAt: expiresAfter(REQUEST_RETENTION_MS),
       completedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true }),
-    // Persist the result from the trusted backend as well. The client later
-    // merges zodiac and lucky-number presentation fields into this same
-    // requestId document, so history survives app reinstalls and local wipes.
-    db.doc(`users/${uid}/fortunes/${requestId}`).set({
+  ];
+  if (persistHistory) {
+    // Premium history survives app reinstalls and local wipes. Anonymous and
+    // free-account history remains device-local and never creates a user tree.
+    writes.push(db.doc(`users/${uid}/fortunes/${requestId}`).set({
       quote: String(prediction || "").slice(0, 360),
       zodiacId: "",
       zodiacIcon: "",
@@ -806,8 +840,9 @@ async function completeAiUsage(
       timestamp: completedAt,
       requestId,
       ...metadata,
-    }, { merge: true }),
-  ]);
+    }, { merge: true }));
+  }
+  await Promise.all(writes);
 }
 
 async function releaseAiUsage(uid, requestId, modelUsage = null) {
@@ -833,6 +868,7 @@ async function releaseAiUsage(uid, requestId, modelUsage = null) {
           day,
           credits: reward.credits + 1,
           rewardedToday: reward.rewardedToday,
+          expireAt: expiresAfter(AD_REWARD_RETENTION_MS),
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },
@@ -848,6 +884,7 @@ async function releaseAiUsage(uid, requestId, modelUsage = null) {
       {
         status: "failed",
         ...(modelUsage ? { modelUsage } : {}),
+        expireAt: expiresAfter(REQUEST_RETENTION_MS),
         failedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       },
@@ -1012,6 +1049,7 @@ exports.adMobRewardCallback = onRequest(
             uid,
             adUnit,
             status: "daily-limit",
+            expireAt: expiresAfter(AD_TRANSACTION_RETENTION_MS),
             createdAt: FieldValue.serverTimestamp(),
           });
           return;
@@ -1024,6 +1062,7 @@ exports.adMobRewardCallback = onRequest(
             day,
             credits: transition.next.credits,
             rewardedToday: transition.next.rewardedToday,
+            expireAt: expiresAfter(AD_REWARD_RETENTION_MS),
             updatedAt: FieldValue.serverTimestamp(),
           },
           { merge: true },
@@ -1033,6 +1072,7 @@ exports.adMobRewardCallback = onRequest(
           adUnit,
           status: transition.grantedCredits > 0 ? "granted" : "progress",
           grantedCredits: transition.grantedCredits,
+          expireAt: expiresAfter(AD_TRANSACTION_RETENTION_MS),
           createdAt: FieldValue.serverTimestamp(),
         });
       });
@@ -1137,11 +1177,24 @@ exports.getAccountState = onCall(
     const isAdmin = request.auth?.token?.admin === true;
     const isReviewer = request.auth?.token?.storeReviewer === true;
     const hasExtendedAccess = isAdmin || isReviewer;
+    const isAnonymous = isAnonymousRequest(request);
     const day = istanbulDayKey();
-    const [userSnap, usageSnap, serverSettings] = await Promise.all([
+    const serverSettings = await getServerAppSettings();
+    if (isAnonymous && !hasExtendedAccess) {
+      return {
+        exists: false,
+        isAdmin: false,
+        isStoreReviewer: false,
+        isPremium: false,
+        membershipTier: "free",
+        premiumSource: "none",
+        premiumUsage: null,
+        limits: serverSettings,
+      };
+    }
+    const [userSnap, usageSnap] = await Promise.all([
       db.doc(`users/${uid}`).get(),
       db.doc(`_usage/${uid}_${day}`).get(),
-      getServerAppSettings(),
     ]);
     const limit = hasExtendedAccess
       ? ADMIN_PREMIUM_DAILY_LIMIT
@@ -1257,6 +1310,7 @@ const legacyGenerateFortune = onCall(
       uid,
       requestId,
       hasExtendedPremiumAccess(request),
+      isAnonymousRequest(request),
     );
     if (reservation.cached) {
       return {
@@ -1294,7 +1348,9 @@ const legacyGenerateFortune = onCall(
     const localDate = localDateForTimeZone(profile.timezoneId);
 
     try {
-      const recentFortunes = await getRecentAiFortunes(uid);
+      const recentFortunes = reservation.persistHistory
+        ? await getRecentAiFortunes(uid)
+        : [];
       const genAI = new GoogleGenAI({ apiKey: process.env[GEMINI_API_KEY] });
       const attemptedRecipes = [];
 
@@ -1402,14 +1458,16 @@ const legacyGenerateFortune = onCall(
           continue;
         }
 
-        await rememberAiFortune(uid, prediction, recipe, recentFortunes).catch(
-          (error) => {
-            console.warn("AI fortune history could not be saved", {
-              uid,
-              message: error?.message,
-            });
-          },
-        );
+        if (reservation.persistHistory) {
+          await rememberAiFortune(uid, prediction, recipe, recentFortunes).catch(
+            (error) => {
+              console.warn("AI fortune history could not be saved", {
+                uid,
+                message: error?.message,
+              });
+            },
+          );
+        }
         await completeAiUsage(
           uid,
           requestId,
@@ -1417,6 +1475,8 @@ const legacyGenerateFortune = onCall(
           GEMINI_PROVIDER,
           usage,
           modelUsage,
+          {},
+          reservation.persistHistory,
         ).catch((error) => {
           console.warn("AI usage request could not be finalized", {
             uid,
@@ -1464,6 +1524,7 @@ exports.generateFortune = onCall(
       uid,
       requestId,
       hasExtendedPremiumAccess(request),
+      isAnonymousRequest(request),
     );
     if (reservation.cached) {
       return {
@@ -1497,7 +1558,9 @@ exports.generateFortune = onCall(
     const category = oneOf(profile.category, CONTENT_CATEGORIES, "general");
 
     try {
-      const recentFortunes = await getRecentAiFortunes(uid);
+      const recentFortunes = reservation.persistHistory
+        ? await getRecentAiFortunes(uid)
+        : [];
       const cloudContent = await getApprovedCloudContent(lang);
       const selectedContent = selectApprovedContent({
         lang,
@@ -1573,18 +1636,20 @@ exports.generateFortune = onCall(
       }
 
       const metadata = contentMetadata(selectedContent, variantType);
-      await rememberAiFortune(
-        uid,
-        prediction,
-        selectedContent,
-        recentFortunes,
-        variantType,
-      ).catch((error) => {
-        console.warn("Fortune history could not be saved", {
+      if (reservation.persistHistory) {
+        await rememberAiFortune(
           uid,
-          message: error?.message,
+          prediction,
+          selectedContent,
+          recentFortunes,
+          variantType,
+        ).catch((error) => {
+          console.warn("Fortune history could not be saved", {
+            uid,
+            message: error?.message,
+          });
         });
-      });
+      }
       await retryTransient(() =>
         completeAiUsage(
           uid,
@@ -1594,6 +1659,7 @@ exports.generateFortune = onCall(
           usage,
           modelUsage,
           metadata,
+          reservation.persistHistory,
         ),
       );
       return {
@@ -1632,6 +1698,9 @@ exports.trackFortuneEvent = onCall(
   { cors: true, enforceAppCheck: false, maxInstances: 20 },
   async (request) => {
     const uid = requireAuth(request);
+    if (isAnonymousRequest(request)) {
+      return { success: true, tracked: false, reason: "anonymous-local-only" };
+    }
     const eventType = String(request.data?.eventType || "");
     const contentId = String(request.data?.contentId || "").trim();
     const eventId = String(request.data?.eventId || "").trim();
@@ -1657,6 +1726,7 @@ exports.trackFortuneEvent = onCall(
         contentId,
         requestId: String(request.data?.requestId || "").slice(0, 128),
         lang: oneOf(request.data?.lang, SUPPORTED_FORTUNE_LANGUAGES, "en"),
+        expireAt: expiresAfter(AD_TRANSACTION_RETENTION_MS),
         createdAt: FieldValue.serverTimestamp(),
       });
       transaction.set(
@@ -2029,16 +2099,39 @@ exports.adminListUsers = onCall(
       if (uid === item.id) profiles.set(uid, data);
     }
 
-    const users = authUsers.map((authUser) =>
+    const anonymousAuthUids = new Set(
+      authUsers
+        .filter((authUser) => !authUser.email && !authUser.providerData?.length)
+        .map((authUser) => authUser.uid),
+    );
+    const visibleAuthUsers = authUsers.filter(
+      (authUser) => !anonymousAuthUids.has(authUser.uid),
+    );
+    const users = visibleAuthUsers.map((authUser) =>
       publicUserRecord(authUser, profiles.get(authUser.uid) || {}));
     const knownUids = new Set(users.map((item) => item.uid));
+    const anonymousProfileUids = [];
     for (const [uid, profile] of profiles) {
-      if (!knownUids.has(uid)) users.push(publicUserRecord(null, profile));
+      const profileLooksAnonymous =
+        !String(profile.email || "").trim() &&
+        !String(profile.authProvider || "").trim();
+      if (
+        anonymousAuthUids.has(uid) ||
+        (!knownUids.has(uid) && profileLooksAnonymous)
+      ) {
+        anonymousProfileUids.push(uid);
+        continue;
+      }
+      if (
+        !knownUids.has(uid) &&
+        !profileLooksAnonymous
+      ) {
+        users.push(publicUserRecord(null, profile));
+      }
     }
 
-    // Make Auth the authoritative admin directory and opportunistically create
-    // missing UID profiles. This keeps users visible even when first-login
-    // profile hydration was interrupted on a mobile device.
+    // Auth is the authoritative admin directory, but anonymous accounts are
+    // intentionally excluded and never receive a persistent Firestore profile.
     for (let offset = 0; offset < users.length; offset += 200) {
       const batch = db.batch();
       for (const user of users.slice(offset, offset + 200)) {
@@ -2077,6 +2170,14 @@ exports.adminListUsers = onCall(
       }
       await batch.commit();
     }
+    // Remove only profiles positively identified as anonymous. Reward and
+    // idempotency ledgers remain intact until their TTL expires.
+    await Promise.allSettled(
+      anonymousProfileUids.flatMap((uid) => [
+        db.recursiveDelete(db.doc(`users/${uid}`)),
+        db.doc(`_ai_history/${uid}`).delete(),
+      ]),
+    );
     await Promise.all(legacyIndexRefs.map((ref) => ref.delete()));
 
     users.sort((a, b) =>
@@ -2087,6 +2188,9 @@ exports.adminListUsers = onCall(
       meta: {
         projectId: process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "",
         authUserCount: authUsers.length,
+        anonymousAuthCount: anonymousAuthUids.size,
+        prunedAnonymousProfileCount: anonymousProfileUids.length,
+        visibleUserCount: users.length,
         profileCount: profiles.size,
       },
     };
@@ -2106,7 +2210,7 @@ exports.adminUpdateAppSettings = onCall(
       50,
     );
     const payload = {
-      instagramHandle: String(request.data?.instagramHandle || "@fortunecookie.ai")
+      instagramHandle: String(request.data?.instagramHandle || "@fortunecookieai")
         .trim().slice(0, 80),
       appName: String(request.data?.appName || "Fortune Cookie AI")
         .trim().slice(0, 80),

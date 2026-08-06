@@ -19,6 +19,7 @@ import {
 import { adManager } from './adManager.js';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+import { Capacitor } from '@capacitor/core';
 import {
   initRevenueCat,
   purchasePackage,
@@ -184,14 +185,11 @@ const btnAgain = document.getElementById('btn-again');
 const btnAgainText = document.getElementById('btn-again-text');
 const btnStory = document.getElementById('btn-story');
 const btnStoryText = document.getElementById('btn-story-text');
-const btnShare = document.getElementById('btn-share');
 
 // Story Modal DOM
 const modalStory = document.getElementById('modal-story');
 const modalTitleText = document.getElementById('modal-title-text');
 const storyPreviewWrapper = document.getElementById('story-preview-wrapper');
-const btnDownloadStory = document.getElementById('btn-download-story');
-const btnDownloadText = document.getElementById('btn-download-text');
 const btnCloseStory = document.getElementById('btn-close-story');
 
 // Ad Elements
@@ -251,6 +249,11 @@ async function settleWithTimeout(promise, timeoutMs, label, fallbackValue) {
 
 async function init() {
   try {
+    document.documentElement.classList.toggle(
+      'platform-android',
+      Capacitor.getPlatform() === 'android',
+    );
+
     setBootstrapStatus(t('bootstrapSettings'));
     userProfile = await settleWithTimeout(
       getProfile(currentLang),
@@ -1120,7 +1123,12 @@ async function renderFortuneResult(fortuneText, generation = {}) {
       lastGeneratedFortune,
       auth.currentUser?.uid || null,
     );
-    if (savedFortune && auth.currentUser) {
+    if (
+      savedFortune &&
+      auth.currentUser &&
+      !auth.currentUser.isAnonymous &&
+      accountStateCache?.isPremium === true
+    ) {
       syncFortuneToCloud(savedFortune).catch(error => {
         console.warn('Fal geçmişi buluta daha sonra eşitlenecek:', error);
       });
@@ -1283,7 +1291,7 @@ async function renderHistoryList() {
   // This prevents an earlier empty cache from hiding cookies created on another
   // device or persisted by the trusted backend seconds ago.
   const historySyncKey = ownerUid ? `fc_history_sync_v4:${ownerUid}` : '';
-  if (ownerUid) {
+  if (ownerUid && accountStateCache?.isPremium === true) {
     try {
       const cloudHistory = await getCloudFortuneHistory();
       history = await mergeHistoryFromCloud(cloudHistory, ownerUid);
@@ -1419,7 +1427,7 @@ async function handleSaveProfile() {
     userProfile = savedProfile;
 
     const currentUser = auth.currentUser;
-    if (currentUser) {
+    if (currentUser && !currentUser.isAnonymous) {
       const cloudProfile = await syncUserWithDatabase(currentUser, userProfile);
       if (cloudProfile?._syncVerified !== true) {
         showToast('Profil cihazda kaydedildi; bulut kaydı doğrulanamadı. Bağlantınızı kontrol edip tekrar deneyin.');
@@ -1439,8 +1447,14 @@ async function handleSaveProfile() {
 }
 
 async function handleClearHistory() {
-  const ownerUid = auth.currentUser?.uid || null;
-  if (ownerUid && !(await clearCloudFortuneHistory())) return false;
+  const ownerUid = auth.currentUser?.isAnonymous
+    ? null
+    : auth.currentUser?.uid || null;
+  if (
+    ownerUid &&
+    accountStateCache?.isPremium === true &&
+    !(await clearCloudFortuneHistory())
+  ) return false;
   await clearHistory(ownerUid);
   if (ownerUid) {
     localStorage.setItem(`fc_history_sync_v4:${ownerUid}`, String(Date.now()));
@@ -1485,8 +1499,6 @@ function updateLanguageUI() {
   if (btnAgainText) btnAgainText.textContent = t('again');
   if (btnStoryText) btnStoryText.textContent = t('storyCard');
   if (modalTitleText) modalTitleText.textContent = texts.modalTitle;
-  if (btnDownloadText) btnDownloadText.textContent = texts.btnDownload;
-
   const btnShareStoryText = document.getElementById('btn-share-story-text');
   if (btnShareStoryText) btnShareStoryText.textContent = t('shareStory');
 
@@ -1689,15 +1701,14 @@ async function openStoryModal() {
     zodiacIcon: lastGeneratedFortune.zodiacIcon,
     zodiacName: locZodiacName,
     userName: lastGeneratedFortune.userName,
-    lang: currentLang
+    lang: currentLang,
+    brandName: 'Fortune Cookie AI',
+    socialHandle: '@fortunecookieai'
   });
 
   storyPreviewWrapper.innerHTML = '';
   storyPreviewWrapper.appendChild(activeStoryCanvas);
 
-  const dataUrl = activeStoryCanvas.toDataURL('image/jpeg', 0.95);
-  btnDownloadStory.href = dataUrl;
-  btnDownloadStory.download = `fortune-story-${Date.now()}.jpg`;
   modalStory.classList.remove('hidden');
   recordFortuneEvent('story_open');
   const modalCanvas = modalStory.querySelector('.card-fireworks-canvas');
@@ -1718,7 +1729,8 @@ async function shareStoryCard() {
 
     let fileUri = null;
 
-    // Try Directory.Cache first, then Directory.Documents
+    // The native share sheet needs a temporary cache file. This is not saved
+    // to the user's gallery and is discarded by the operating system.
     try {
       const saved = await Filesystem.writeFile({
         path: fileName,
@@ -1727,23 +1739,14 @@ async function shareStoryCard() {
       });
       fileUri = saved.uri;
     } catch (fsErr) {
-      try {
-        const savedDoc = await Filesystem.writeFile({
-          path: fileName,
-          data: base64Data,
-          directory: Directory.Documents
-        });
-        fileUri = savedDoc.uri;
-      } catch (docErr) {
-        console.warn('Filesystem write failed:', docErr);
-      }
+      console.warn('Share cache write failed:', fsErr);
     }
 
     // 1. Try Native Capacitor Share with actual image file array
     if (fileUri && window.Capacitor && window.Capacitor.isNativePlatform()) {
       await Share.share({
         title: texts.cardTitle || 'Fortune Cookie AI',
-        text: '✨ Fortune Cookie AI App',
+        text: '✨ Fortune Cookie AI · @fortunecookieai',
         files: [fileUri],
         dialogTitle: texts.btnShareStory || 'Hikayeyi Paylaş'
       });
@@ -1761,7 +1764,7 @@ async function shareStoryCard() {
             try {
               await navigator.share({
                 title: texts.cardTitle || 'Fortune Cookie AI',
-                text: '✨ Fortune Cookie AI App',
+                text: '✨ Fortune Cookie AI · @fortunecookieai',
                 files: [file]
               });
               recordFortuneEvent('share_complete');
@@ -1769,95 +1772,23 @@ async function shareStoryCard() {
               return;
             } catch (shareErr) {
               if (shareErr.name !== 'AbortError') {
-                console.warn('Web file share error, downloading instead:', shareErr);
-                await handleDownloadStory();
+                console.warn('Web file share error:', shareErr);
+                showToast(texts.shareUnavailable || 'Paylaşım bu cihazda kullanılamıyor.');
               }
               return;
             }
           }
         }
-        await handleDownloadStory();
+        showToast(texts.shareUnavailable || 'Paylaşım bu cihazda kullanılamıyor.');
       }, 'image/jpeg', 0.95);
     } else {
-      await handleDownloadStory();
+      showToast(texts.shareUnavailable || 'Paylaşım bu cihazda kullanılamıyor.');
     }
   } catch (e) {
     if (e.name !== 'AbortError' && e.message !== 'Share canceled') {
       console.error('Share story error:', e);
-      await handleDownloadStory();
+      showToast(texts.shareUnavailable || 'Paylaşım bu cihazda kullanılamıyor.');
     }
-  }
-}
-
-async function handleDownloadStory(e) {
-  if (e) e.preventDefault();
-  const texts = uiText[currentLang] || uiText.en;
-  if (!activeStoryCanvas) {
-    showToast('⚠️ Görsel henüz hazır değil.');
-    return;
-  }
-
-  showToast('⏳ Görsel cihazınıza indiriliyor...');
-
-  try {
-    const dataUrl = activeStoryCanvas.toDataURL('image/jpeg', 0.95);
-    const fileName = `fortune_story_${Date.now()}.jpg`;
-
-    // 1. Native Mobile App Filesystem Save Fallback
-    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-      try {
-        const base64Data = dataUrl.replace(/^data:image\/jpeg;base64,/, '');
-        await Filesystem.writeFile({
-          path: fileName,
-          data: base64Data,
-          directory: Directory.Cache
-        });
-        const fileResult = await Filesystem.getUri({
-          directory: Directory.Cache,
-          path: fileName
-        });
-        if (window.Capacitor.Plugins && window.Capacitor.Plugins.Share) {
-          await window.Capacitor.Plugins.Share.share({
-            title: 'Fortune Story',
-            url: fileResult.uri
-          });
-          recordFortuneEvent('download');
-          showToast('📸 Hikaye resmi galerinize kaydedildi!');
-          return;
-        }
-      } catch (nativeErr) {
-        console.warn('Native save fallback to browser link:', nativeErr);
-      }
-    }
-
-    // 2. Direct Web Browser Download via Object Blob URL (Guaranteed to trigger image file download)
-    activeStoryCanvas.toBlob((blob) => {
-      if (!blob) {
-        showToast('⚠️ Görsel oluşturulamadı.');
-        return;
-      }
-      const blobUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.download = fileName;
-      link.href = blobUrl;
-      link.style.display = 'none';
-      document.body.appendChild(link);
-      link.click();
-      recordFortuneEvent('download');
-
-      setTimeout(() => {
-        if (document.body.contains(link)) {
-          document.body.removeChild(link);
-        }
-        URL.revokeObjectURL(blobUrl);
-      }, 500);
-
-      showToast('📥 Hikaye görseli galerinize indirildi!');
-    }, 'image/jpeg', 0.95);
-
-  } catch (err) {
-    console.error('Download story error:', err);
-    showToast('⚠️ Görsel indirilirken bir sorun oluştu.');
   }
 }
 
@@ -1867,32 +1798,6 @@ function showToast(msg) {
   setTimeout(() => toast.classList.add('hidden'), 2500);
 }
 
-function shareFortune() {
-  const texts = uiText[currentLang] || uiText.en;
-  const quoteText = fortuneQuoteText.textContent;
-  const numbersText = Array.from(document.querySelectorAll('.number-badge'))
-    .map(el => el.textContent)
-    .join(', ');
-
-  const textToShare = `✨ ${texts.cardTitle} ✨\n\n${quoteText}\n\n🍀 ${texts.luckyTitle}: ${numbersText}\n\n🥠 Fortune Cookie App`;
-
-  recordFortuneEvent('share_start');
-  if (navigator.share) {
-    navigator.share({ title: texts.cardTitle, text: textToShare, url: window.location.href })
-      .then(() => {
-        recordFortuneEvent('share_complete');
-        showToast(texts.toastShared);
-      })
-      .catch(() => copyToClipboard(textToShare));
-  } else {
-    copyToClipboard(textToShare);
-  }
-}
-
-function copyToClipboard(text) {
-  const texts = uiText[currentLang] || uiText.en;
-  navigator.clipboard.writeText(text).then(() => showToast(texts.toastCopied));
-}
 
 async function updateProfileMembershipStatus() {
   const requestedLanguage = currentLang;
@@ -2005,7 +1910,6 @@ function setupEventListeners() {
 
   btnAgain.addEventListener('click', resetToLanding);
   btnStory.addEventListener('click', openStoryModal);
-  btnShare.addEventListener('click', shareFortune);
 
   // Profile Modal & Inputs
   btnOpenProfile.addEventListener('click', async () => {
@@ -2155,7 +2059,7 @@ function setupEventListeners() {
   }
 
   const btnSignInApple = document.getElementById('btn-signin-apple');
-  if (btnSignInApple) {
+  if (btnSignInApple && Capacitor.getPlatform() !== 'android') {
     btnSignInApple.addEventListener('click', async () => {
       btnSignInApple.disabled = true;
       btnSignInApple.setAttribute('aria-busy', 'true');
@@ -2498,9 +2402,6 @@ function setupEventListeners() {
   const btnShareStory = document.getElementById('btn-share-story');
   if (btnShareStory) {
     btnShareStory.addEventListener('click', shareStoryCard);
-  }
-  if (btnDownloadStory) {
-    btnDownloadStory.addEventListener('click', handleDownloadStory);
   }
   btnCloseStory.addEventListener('click', () => modalStory.classList.add('hidden'));
 

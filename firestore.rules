@@ -6,8 +6,13 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function owns(userId) {
-      return signedIn() && request.auth.uid == userId;
+    function isRegisteredUser() {
+      return signedIn()
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    function ownsRegisteredProfile(userId) {
+      return isRegisteredUser() && request.auth.uid == userId;
     }
 
     function isAdmin() {
@@ -140,16 +145,16 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow get: if owns(userId) || isAdmin();
+      allow get: if ownsRegisteredProfile(userId) || isAdmin();
       allow list: if isAdmin();
-      allow create: if owns(userId) && validUserCreate(userId);
-      allow update: if isAdmin() || (owns(userId) && validUserUpdate());
+      allow create: if ownsRegisteredProfile(userId) && validUserCreate(userId);
+      allow update: if isAdmin() || (ownsRegisteredProfile(userId) && validUserUpdate());
       allow delete: if false;
 
       match /fortunes/{fortuneId} {
-        allow read: if owns(userId) || isAdmin();
-        allow create, update: if owns(userId) && validFortuneData();
-        allow delete: if owns(userId) || isAdmin();
+        allow read: if ownsRegisteredProfile(userId) || isAdmin();
+        allow create, update: if ownsRegisteredProfile(userId) && validFortuneData();
+        allow delete: if ownsRegisteredProfile(userId) || isAdmin();
       }
     }
 

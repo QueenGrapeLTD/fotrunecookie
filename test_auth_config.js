@@ -182,6 +182,27 @@ test('server settings and trusted history are authoritative', () => {
   assert.match(html, /id="label-profile-sun"/);
 });
 
+test('anonymous users remain local except for expiring reward security ledgers', () => {
+  assert.match(authSource, /if \(!user \|\| user\.isAnonymous\) return null/);
+  assert.match(authSource, /if \(!user \|\| user\.isAnonymous\) return false/);
+  assert.match(mainSource, /accountStateCache\?\.isPremium === true/);
+  assert.match(functionsSource, /isAnonymousRequest\(request\)/);
+  assert.match(functionsSource, /reason: "anonymous-local-only"/);
+  assert.match(functionsSource, /persistHistory: isPremium/);
+  assert.match(functionsSource, /if \(persistHistory\)/);
+  assert.match(functionsSource, /anonymousAuthCount: anonymousAuthUids\.size/);
+  assert.match(functionsSource, /expireAt: expiresAfter\(REQUEST_RETENTION_MS\)/);
+  assert.match(functionsSource, /expireAt: expiresAfter\(AD_TRANSACTION_RETENTION_MS\)/);
+});
+
+test('premium delivery starts from approved content with a safe AI adaptation fallback', () => {
+  assert.match(functionsSource, /selectApprovedContent\(\{/);
+  assert.match(functionsSource, /let prediction = selectedContent\.text/);
+  assert.match(functionsSource, /provider = "FortuneCookieAI-Curated"/);
+  assert.match(functionsSource, /variantType = "approved-fallback"/);
+  assert.match(functionsSource, /variantType = "ai-adaptation"/);
+});
+
 test('all runtime Firebase clients are locked to the production project', () => {
   assert.match(authSource, /EXPECTED_FIREBASE_PROJECT_ID = "fortunecookieai-prod"/);
   assert.doesNotMatch(authSource, /atonumus-fortunecookie/);

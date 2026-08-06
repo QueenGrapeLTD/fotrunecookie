@@ -867,7 +867,7 @@ function isRecentLoginWrite(value) {
 }
 
 export async function syncUserWithDatabase(user, profileData = {}) {
-  if (!user) return null;
+  if (!user || user.isAnonymous) return null;
   const hasProfileUpdates = hasExplicitProfileUpdates(profileData);
   const syncKey = `${user.uid}:${hasProfileUpdates ? "profile" : "login"}`;
   if (userSyncPromises.has(syncKey)) return userSyncPromises.get(syncKey);
@@ -956,7 +956,9 @@ export async function syncUserWithDatabase(user, profileData = {}) {
 }
 
 export async function getUserProfileFromCloud(uid) {
-  if (!uid || auth.currentUser?.uid !== uid) return null;
+  if (!uid || auth.currentUser?.uid !== uid || auth.currentUser?.isAnonymous) {
+    return null;
+  }
   try {
     const docSnap = await getDoc(doc(db, "users", uid));
     return docSnap.exists() ? docSnap.data() : null;
@@ -981,7 +983,7 @@ function validTimestamp(value) {
 
 export async function syncFortuneToCloud(fortuneItem) {
   const user = auth.currentUser;
-  if (!user) return false;
+  if (!user || user.isAnonymous) return false;
 
   try {
     const payload = {
@@ -1025,7 +1027,12 @@ export async function trackFortuneEvent({
   lang = "en",
   eventId = "",
 } = {}) {
-  if (!auth.currentUser || !contentId || !eventType) return false;
+  if (
+    !auth.currentUser ||
+    auth.currentUser.isAnonymous ||
+    !contentId ||
+    !eventType
+  ) return false;
   const safeEventId =
     cleanString(eventId, 128).replace(/[^A-Za-z0-9_-]/g, "") ||
     `evt_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
@@ -1047,7 +1054,7 @@ export async function trackFortuneEvent({
 
 export async function getCloudFortuneHistory(maxItems = 100) {
   const user = auth.currentUser;
-  if (!user) return [];
+  if (!user || user.isAnonymous) return [];
 
   let directItems = [];
   try {
@@ -1091,7 +1098,11 @@ export async function getCloudFortuneHistory(maxItems = 100) {
 }
 
 export async function syncFortuneHistoryToCloud(history = []) {
-  if (!auth.currentUser || !Array.isArray(history)) return false;
+  if (
+    !auth.currentUser ||
+    auth.currentUser.isAnonymous ||
+    !Array.isArray(history)
+  ) return false;
   const items = history.slice(0, 100);
   const results = await Promise.allSettled(
     items.map((item) => syncFortuneToCloud(item)),
@@ -1103,7 +1114,7 @@ export async function syncFortuneHistoryToCloud(history = []) {
 
 export async function clearCloudFortuneHistory() {
   const user = auth.currentUser;
-  if (!user) return false;
+  if (!user || user.isAnonymous) return false;
 
   try {
     const snapshot = await getDocs(
@@ -1222,7 +1233,7 @@ export async function getAppSettingsFromCloud(forceRefresh = false) {
     console.warn("App settings fetch failed:", error?.code);
   }
   return {
-    instagramHandle: "@fortunecookie.ai",
+    instagramHandle: "@fortunecookieai",
     appName: "Fortune Cookie AI",
     freeDailyLimit: 1,
     premiumDailyLimit: 5,
