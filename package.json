@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:hosting": "node scripts/build-hosting-sites.js",
     "test": "node --test test_*.js",
-    "predeploy:check": "node scripts/predeploy-check.js && npm test && npm --prefix functions test && npm run build",
+    "predeploy:check": "node scripts/predeploy-check.js && npm test && npm --prefix functions test && npm run build && npm run build:hosting",
     "mobile:check": "node scripts/mobile-config-check.js",
     "appstore:check": "node scripts/app-store-check.js",
     "admob:functions-env": "node scripts/sync-admob-function-env.js",

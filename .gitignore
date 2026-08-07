@@ -1,6 +1,8 @@
 node_modules/
 functions/node_modules/
 dist/
+dist-admin/
+dist-public/
 build/
 android/**/build/
 android/.gradle/

@@ -1,5 +1,18 @@
 {
   "projects": {
     "default": "fortunecookieai-prod"
-  }
+  },
+  "targets": {
+    "fortunecookieai-prod": {
+      "hosting": {
+        "public": [
+          "fortunecookieai-prod"
+        ],
+        "admin": [
+          "fortunecookieai-admin"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

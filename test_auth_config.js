@@ -30,6 +30,9 @@ const iosInfoPlist = fs.readFileSync(
 const capacitorConfig = JSON.parse(
   fs.readFileSync(new URL('./capacitor.config.json', import.meta.url), 'utf8'),
 );
+const firebaseHostingConfig = JSON.parse(
+  fs.readFileSync(new URL('./firebase.json', import.meta.url), 'utf8'),
+);
 
 test('social authentication never redirects a production session to localhost', () => {
   assert.doesNotMatch(authSource, /signInWithRedirect/);
@@ -236,6 +239,22 @@ test('premium delivery starts from approved content with a safe AI adaptation fa
 test('all runtime Firebase clients are locked to the production project', () => {
   assert.match(authSource, /EXPECTED_FIREBASE_PROJECT_ID = "fortunecookieai-prod"/);
   assert.doesNotMatch(authSource, /atonumus-fortunecookie/);
+});
+
+test('public hosting excludes the mobile app and isolates the admin bundle', () => {
+  const publicHosting = firebaseHostingConfig.hosting.find((item) => item.target === 'public');
+  const adminHosting = firebaseHostingConfig.hosting.find((item) => item.target === 'admin');
+  assert.equal(publicHosting.public, 'dist-public');
+  assert.equal(adminHosting.public, 'dist-admin');
+  assert.deepEqual(publicHosting.predeploy, ['npm run build:hosting']);
+  assert.deepEqual(adminHosting.predeploy, ['npm run build:hosting']);
+  assert.equal(adminHosting.rewrites[0].destination, '/admin.html');
+  const hostingBuilder = fs.readFileSync(
+    new URL('./scripts/build-hosting-sites.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(hostingBuilder, /mobile-only\.html/);
+  assert.doesNotMatch(hostingBuilder, /copyFileSync\(resolve\(root, 'index\.html'/);
 });
 
 test('Google and Apple sign-in controls are enabled provider buttons', () => {
