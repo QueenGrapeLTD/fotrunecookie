@@ -509,7 +509,7 @@ export async function getAdRewardStateFromServer() {
     return {
       credits: 0,
       rewardedToday: 0,
-      dailyLimit: 3,
+      dailyLimit: 9,
       adsPerCredit: 3,
     };
   }
@@ -518,7 +518,7 @@ export async function getAdRewardStateFromServer() {
   return {
     credits: Math.max(Number(result?.data?.credits) || 0, 0),
     rewardedToday: Math.max(Number(result?.data?.rewardedToday) || 0, 0),
-    dailyLimit: Math.max(Number(result?.data?.dailyLimit) || 3, 1),
+    dailyLimit: Math.max(Number(result?.data?.dailyLimit) || 9, 1),
     adsPerCredit: Math.max(Number(result?.data?.adsPerCredit) || 3, 1),
     day: result?.data?.day || "",
   };

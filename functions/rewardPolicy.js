@@ -1,4 +1,6 @@
-const ADMOB_DAILY_REWARD_LIMIT = 3;
+// Freemium users may earn at most three Premium Fortune Cookies per day.
+// Each credit requires three verified ads, so the daily ad ceiling is nine.
+const ADMOB_DAILY_REWARD_LIMIT = 9;
 const ADMOB_ADS_PER_CREDIT = 3;
 
 function normalizeRewardState(data = {}, day) {

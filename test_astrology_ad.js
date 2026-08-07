@@ -81,3 +81,43 @@ test("rewarded ads require server-verified credits", async () => {
   assert.match(serverSource, /PREMIUM_DAILY_LIMIT = 5/);
   assert.match(serverSource, /ADMIN_PREMIUM_DAILY_LIMIT = 50/);
 });
+
+test("native display ads use platform-specific app-open and banner units", async () => {
+  const clientSource = await readFile(new URL("./adManager.js", import.meta.url), "utf8");
+  const mainSource = await readFile(new URL("./main.js", import.meta.url), "utf8");
+  const androidPlugin = await readFile(
+    new URL(
+      "./android/app/src/main/java/com/fortunecookieai/app/AppOpenAdPlugin.java",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const iosPlugin = await readFile(
+    new URL("./ios/App/App/AppOpenAdPlugin.swift", import.meta.url),
+    "utf8",
+  );
+  const iosBridge = await readFile(
+    new URL("./ios/App/App/BridgeViewController.swift", import.meta.url),
+    "utf8",
+  );
+  const iosStoryboard = await readFile(
+    new URL("./ios/App/App/Base.lproj/Main.storyboard", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(clientSource, /VITE_ADMOB_ANDROID_APP_OPEN_AD_UNIT_ID/);
+  assert.match(clientSource, /VITE_ADMOB_IOS_APP_OPEN_AD_UNIT_ID/);
+  assert.match(clientSource, /VITE_ADMOB_ANDROID_BANNER_AD_UNIT_ID/);
+  assert.match(clientSource, /VITE_ADMOB_IOS_BANNER_AD_UNIT_ID/);
+  assert.match(clientSource, /BannerAdSize\.ADAPTIVE_BANNER/);
+  assert.match(clientSource, /syncDisplayAds\(\{ isPremium = false \}/);
+  assert.match(clientSource, /if \(isPremium\) \{\s*await this\.hideBanner\(\)/);
+  assert.match(clientSource, /appOpenShownThisLaunch/);
+  assert.match(mainSource, /if \(accountState\) void adManager\.syncDisplayAds/);
+  assert.match(androidPlugin, /AppOpenAd\.load\(/);
+  assert.match(androidPlugin, /MAX_CACHE_AGE_MS = 4L \* 60L \* 60L \* 1000L/);
+  assert.match(iosPlugin, /AppOpenAd\.load\(with: adId, request: Request\(\)\)/);
+  assert.match(iosPlugin, /maximumCacheAge: TimeInterval = 4 \* 60 \* 60/);
+  assert.match(iosBridge, /registerPluginType\(AppOpenAdPlugin\.self\)/);
+  assert.match(iosStoryboard, /customClass="BridgeViewController"/);
+});

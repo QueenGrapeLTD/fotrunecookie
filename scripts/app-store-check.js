@@ -60,6 +60,8 @@ for (const key of [
   'VITE_FIREBASE_APP_ID',
   'VITE_REVENUECAT_IOS_API_KEY',
   'VITE_ADMOB_IOS_REWARDED_AD_UNIT_ID',
+  'VITE_ADMOB_IOS_APP_OPEN_AD_UNIT_ID',
+  'VITE_ADMOB_IOS_BANNER_AD_UNIT_ID',
 ]) {
   requireEnv(env, key);
 }
@@ -94,6 +96,14 @@ if ((env.VITE_REVENUECAT_IOS_API_KEY || '').startsWith('test_')) {
 
 if ((env.VITE_ADMOB_IOS_REWARDED_AD_UNIT_ID || '').startsWith(sampleAdMobPublisher)) {
   errors.push('VITE_ADMOB_IOS_REWARDED_AD_UNIT_ID Google test reklam birimi olamaz.');
+}
+for (const key of [
+  'VITE_ADMOB_IOS_APP_OPEN_AD_UNIT_ID',
+  'VITE_ADMOB_IOS_BANNER_AD_UNIT_ID',
+]) {
+  if ((env[key] || '').startsWith(sampleAdMobPublisher)) {
+    errors.push(`${key} Google test reklam birimi olamaz.`);
+  }
 }
 
 const appAdsPath = fullPath('public/app-ads.txt');

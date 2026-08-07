@@ -355,6 +355,7 @@ async function updateAdStatusUI(forceRefresh = false) {
   const isPremium =
     accountState?.isPremium === true ||
     accountState?.membershipTier === 'premium';
+  if (accountState) void adManager.syncDisplayAds({ isPremium });
   const premiumLimit =
     Number(accountState?.premiumUsage?.limit) ||
     Number(appSettings.premiumDailyLimit) ||
@@ -423,7 +424,7 @@ async function updateAdStatusUI(forceRefresh = false) {
       const canWatchForCredit =
         adsAvailable &&
         qCount < 1 &&
-        progress.current < progress.required;
+        progress.canEarnMore;
       btnWatchAdReward.classList.toggle('hidden', !canWatchForCredit);
       btnWatchAdReward.style.display = canWatchForCredit ? 'flex' : 'none';
     }
@@ -1122,7 +1123,9 @@ async function renderFortuneResult(fortuneText, generation = {}) {
   try {
     const savedFortune = await saveFortuneToHistory(
       lastGeneratedFortune,
-      auth.currentUser?.uid || null,
+      auth.currentUser && !auth.currentUser.isAnonymous
+        ? auth.currentUser.uid
+        : null,
     );
     if (
       savedFortune &&
@@ -1800,15 +1803,19 @@ function showToast(msg) {
 }
 
 
-async function updateProfileMembershipStatus() {
+async function updateProfileMembershipStatus(forceRefresh = false) {
   const requestedLanguage = currentLang;
-  const accountState = await getVerifiedAccountState();
+  const accountState = await getVerifiedAccountState(forceRefresh);
   if (requestedLanguage !== currentLang) return;
   const isPremium = accountState?.isPremium === true;
   const premiumLimit =
     Number(accountState?.premiumUsage?.limit) ||
     Number(appSettings.premiumDailyLimit) ||
     5;
+  const freeLimit =
+    Number(accountState?.limits?.freeDailyLimit) ||
+    Number(appSettings.freeDailyLimit) ||
+    1;
   const membershipCard = document.getElementById('profile-membership-card');
   const badgeTag = document.getElementById('membership-badge-tag');
   const subtext = document.getElementById('membership-subtext');
@@ -1827,7 +1834,7 @@ async function updateProfileMembershipStatus() {
   } else {
     membershipCard.className = 'profile-membership-card free-tier';
     if (badgeTag) badgeTag.textContent = `🌱 ${t('accountFree')}`;
-    if (subtext) subtext.textContent = t('freeAllowance');
+    if (subtext) subtext.textContent = t('freeAllowance', { limit: freeLimit });
     if (btnUpgrade) {
       btnUpgrade.textContent = `⭐ ${t('upgrade')}`;
       btnUpgrade.style.opacity = '1';
@@ -1930,7 +1937,7 @@ function setupEventListeners() {
 
   // Profile Modal & Inputs
   btnOpenProfile.addEventListener('click', async () => {
-    await updateProfileMembershipStatus();
+    await updateProfileMembershipStatus(true);
     modalProfile.classList.remove('hidden');
   });
   btnCloseProfile.addEventListener('click', () => modalProfile.classList.add('hidden'));

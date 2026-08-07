@@ -92,7 +92,7 @@ test('iOS target is entitled and configured for Sign in with Apple', () => {
   assert.match(iosEntitlements, /<string>Default<\/string>/);
   assert.match(xcodeProject, /CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements/);
   assert.match(xcodeProject, /com\.apple\.SignInWithApple/);
-  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 11/);
+  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 12/);
   assert.match(xcodeProject, /TARGETED_DEVICE_FAMILY = "1,2"/);
 });
 
@@ -225,6 +225,27 @@ test('anonymous users remain local except for expiring reward security ledgers',
   assert.match(functionsSource, /anonymousAuthCount: anonymousAuthUids\.size/);
   assert.match(functionsSource, /expireAt: expiresAfter\(REQUEST_RETENTION_MS\)/);
   assert.match(functionsSource, /expireAt: expiresAfter\(AD_TRANSACTION_RETENTION_MS\)/);
+});
+
+test('anonymous UI uses configurable limits and keeps device history without a UID', () => {
+  const historySource = fs.readFileSync(
+    new URL('./historyStore.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(mainSource, /t\('freeAllowance', \{ limit: freeLimit \}\)/);
+  assert.match(mainSource, /updateProfileMembershipStatus\(true\)/);
+  assert.match(mainSource, /auth\.currentUser && !auth\.currentUser\.isAnonymous/);
+  assert.match(historySource, /HISTORY_LOCAL_KEY = 'fortune_cookie_history_v2'/);
+  assert.match(historySource, /localStorage\.setItem\(HISTORY_LOCAL_KEY/);
+  assert.match(historySource, /History file mirror could not be written/);
+});
+
+test('reward progress reopens after a consumed credit until nine daily ads', () => {
+  const adSource = fs.readFileSync(new URL('./adManager.js', import.meta.url), 'utf8');
+  assert.match(adSource, /DEFAULT_DAILY_AD_LIMIT = 9/);
+  assert.match(adSource, /watchedToday % adsPerCredit/);
+  assert.match(adSource, /canEarnMore/);
+  assert.match(mainSource, /qCount < 1 &&\s*progress\.canEarnMore/);
 });
 
 test('premium delivery starts from approved content with a safe AI adaptation fallback', () => {
