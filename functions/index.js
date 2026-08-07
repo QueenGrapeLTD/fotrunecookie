@@ -768,6 +768,9 @@ async function reserveAiUsage(
           day,
           credits: reward.credits - 1,
           rewardedToday: reward.rewardedToday,
+          dailyLimit: reward.dailyLimit,
+          adsPerCredit: reward.adsPerCredit,
+          policyVersion: reward.policyVersion,
           expireAt: expiresAfter(AD_REWARD_RETENTION_MS),
           updatedAt: FieldValue.serverTimestamp(),
         },
@@ -868,6 +871,9 @@ async function releaseAiUsage(uid, requestId, modelUsage = null) {
           day,
           credits: reward.credits + 1,
           rewardedToday: reward.rewardedToday,
+          dailyLimit: reward.dailyLimit,
+          adsPerCredit: reward.adsPerCredit,
+          policyVersion: reward.policyVersion,
           expireAt: expiresAfter(AD_REWARD_RETENTION_MS),
           updatedAt: FieldValue.serverTimestamp(),
         },
@@ -1062,6 +1068,9 @@ exports.adMobRewardCallback = onRequest(
             day,
             credits: transition.next.credits,
             rewardedToday: transition.next.rewardedToday,
+            dailyLimit: transition.next.dailyLimit,
+            adsPerCredit: transition.next.adsPerCredit,
+            policyVersion: transition.next.policyVersion,
             expireAt: expiresAfter(AD_REWARD_RETENTION_MS),
             updatedAt: FieldValue.serverTimestamp(),
           },
@@ -2045,7 +2054,12 @@ async function deleteUserData(uid) {
 
 function publicUserRecord(authUser, profile = {}) {
   const createdAt = profile.createdAt || authUser?.metadata?.creationTime || "";
-  const lastLogin = profile.lastLogin || authUser?.metadata?.lastSignInTime || "";
+  const profileLastLogin = String(profile.lastLogin || "");
+  const authLastLogin = String(authUser?.metadata?.lastSignInTime || "");
+  const lastLogin = new Date(authLastLogin || 0).getTime() >
+      new Date(profileLastLogin || 0).getTime()
+    ? authLastLogin
+    : profileLastLogin;
   const isPremium =
     authUser?.customClaims?.admin === true ||
     authUser?.customClaims?.storeReviewer === true ||

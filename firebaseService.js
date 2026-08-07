@@ -471,8 +471,8 @@ export async function getAdRewardStateFromServer() {
     return {
       credits: 0,
       rewardedToday: 0,
-      dailyLimit: 9,
-      adsPerCredit: 3,
+      dailyLimit: 3,
+      adsPerCredit: 1,
     };
   }
   const callable = httpsCallable(functions, "getAdRewardState");
@@ -480,8 +480,8 @@ export async function getAdRewardStateFromServer() {
   return {
     credits: Math.max(Number(result?.data?.credits) || 0, 0),
     rewardedToday: Math.max(Number(result?.data?.rewardedToday) || 0, 0),
-    dailyLimit: Math.max(Number(result?.data?.dailyLimit) || 9, 1),
-    adsPerCredit: Math.max(Number(result?.data?.adsPerCredit) || 3, 1),
+    dailyLimit: Math.max(Number(result?.data?.dailyLimit) || 3, 1),
+    adsPerCredit: Math.max(Number(result?.data?.adsPerCredit) || 1, 1),
     day: result?.data?.day || "",
   };
 }
@@ -1216,14 +1216,22 @@ export async function currentUserIsAdmin() {
   return token.claims.admin === true;
 }
 
-export async function getAllUsersFromFirestore() {
+export async function getAdminUserDirectory() {
   const data = await callAdminFunction("adminListUsers");
   if (data?.meta) {
     console.info("Admin user directory loaded", data.meta);
   }
-  return Array.isArray(data?.users)
-    ? data.users.map((user) => ({ ...user, fortuneHistory: [] }))
-    : [];
+  return {
+    users: Array.isArray(data?.users)
+      ? data.users.map((user) => ({ ...user, fortuneHistory: [] }))
+      : [],
+    meta: data?.meta || {},
+  };
+}
+
+export async function getAllUsersFromFirestore() {
+  const directory = await getAdminUserDirectory();
+  return directory.users;
 }
 
 export async function getUserHistoryForAdmin(uid) {

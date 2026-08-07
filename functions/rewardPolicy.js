@@ -1,17 +1,21 @@
-// Freemium users may earn at most three Premium Fortune Cookies per day.
-// Each credit requires three verified ads, so the daily ad ceiling is nine.
-const ADMOB_DAILY_REWARD_LIMIT = 9;
-const ADMOB_ADS_PER_CREDIT = 3;
+// One completed AdMob rewarded presentation may itself contain an ad pod.
+// Count the SDK's single verified reward event as one Premium Cookie credit.
+// Freemium users may earn at most three credits per day.
+const ADMOB_DAILY_REWARD_LIMIT = 3;
+const ADMOB_ADS_PER_CREDIT = 1;
+const REWARD_POLICY_VERSION = 2;
 
 function normalizeRewardState(data = {}, day) {
   const currentDay = data.day === day;
+  const currentPolicy = Number(data.policyVersion) === REWARD_POLICY_VERSION;
   return {
     credits: currentDay ? Math.max(Number(data.credits) || 0, 0) : 0,
-    rewardedToday: currentDay
+    rewardedToday: currentDay && currentPolicy
       ? Math.max(Number(data.rewardedToday) || 0, 0)
       : 0,
     dailyLimit: ADMOB_DAILY_REWARD_LIMIT,
     adsPerCredit: ADMOB_ADS_PER_CREDIT,
+    policyVersion: REWARD_POLICY_VERSION,
     day,
   };
 }
@@ -54,6 +58,7 @@ function advanceRewardState(data = {}, day) {
 module.exports = {
   ADMOB_ADS_PER_CREDIT,
   ADMOB_DAILY_REWARD_LIMIT,
+  REWARD_POLICY_VERSION,
   advanceRewardState,
   normalizeRewardState,
 };

@@ -2126,6 +2126,21 @@ html.native-ad-banner-visible body {
   );
 }
 
+/* Fixed modals do not participate in body flow. Reserve the native banner
+   inside their viewport as well, otherwise the profile save action is hidden. */
+html.native-ad-banner-visible .modal-overlay {
+  padding-bottom: calc(
+    16px + var(--native-ad-banner-height, 50px) + var(--safe-area-bottom)
+  );
+}
+
+html.native-ad-banner-visible .profile-modal-box {
+  max-height: calc(
+    100dvh - 32px - var(--safe-area-top) - var(--safe-area-bottom) -
+      var(--native-ad-banner-height, 50px)
+  );
+}
+
 /* Persistent Bottom Ad Banner */
 .ad-banner-container {
   width: 100%;

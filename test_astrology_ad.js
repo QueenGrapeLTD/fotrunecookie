@@ -62,7 +62,7 @@ test("rewarded ads require server-verified credits", async () => {
   assert.match(serverSource, /_ad_transactions/);
   assert.match(serverSource, /transactionId/);
   assert.match(serverSource, /advanceRewardState/);
-  assert.match(rewardPolicySource, /ADMOB_ADS_PER_CREDIT = 3/);
+  assert.match(rewardPolicySource, /ADMOB_ADS_PER_CREDIT = 1/);
   assert.match(rewardPolicySource, /nextEarnedCredits - previousEarnedCredits/);
   assert.match(serverSource, /PREMIUM_DAILY_LIMIT = 5/);
   assert.match(serverSource, /ADMIN_PREMIUM_DAILY_LIMIT = 50/);

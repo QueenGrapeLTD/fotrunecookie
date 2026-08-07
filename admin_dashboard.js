@@ -1,5 +1,5 @@
 import {
-  getAllUsersFromFirestore,
+  getAdminUserDirectory,
   toggleUserPremiumStatusInCloud,
   deleteUserFromCloud,
   getUserHistoryForAdmin,
@@ -18,6 +18,8 @@ const statPremiumUsers = document.getElementById('stat-premium-users');
 const statTodayFortunes = document.getElementById('stat-today-fortunes');
 const usersTableBody = document.getElementById('users-table-body');
 const searchUserInput = document.getElementById('search-user-input');
+const btnRefreshUsers = document.getElementById('btn-refresh-users');
+const adminDirectoryStatus = document.getElementById('admin-directory-status');
 
 const inputInstagramHandle = document.getElementById('input-instagram-handle');
 const inputAppName = document.getElementById('input-app-name');
@@ -52,7 +54,9 @@ async function initAdminDashboard() {
 
   // 2. Fetch Users
   try {
-    allUsers = await getAllUsersFromFirestore();
+    const directory = await getAdminUserDirectory();
+    allUsers = directory.users;
+    renderDirectoryStatus(directory.meta);
   } catch (error) {
     console.error('Admin data load failed:', error?.code);
     allUsers = [];
@@ -77,6 +81,37 @@ function renderStats() {
     }
   });
   if (statTodayFortunes) statTodayFortunes.textContent = totalFortunes.toString();
+}
+
+function renderDirectoryStatus(meta = {}) {
+  if (!adminDirectoryStatus) return;
+  adminDirectoryStatus.textContent =
+    `${meta.projectId || 'fortunecookieai-prod'} · Auth: ${meta.authUserCount ?? '-'} · ` +
+    `Görünen: ${meta.visibleUserCount ?? allUsers.length} · ` +
+    `Son yenileme: ${new Date().toLocaleTimeString('tr-TR')}`;
+}
+
+async function refreshUserDirectory() {
+  if (btnRefreshUsers) {
+    btnRefreshUsers.disabled = true;
+    btnRefreshUsers.textContent = 'Yenileniyor…';
+  }
+  try {
+    const directory = await getAdminUserDirectory();
+    allUsers = directory.users;
+    renderDirectoryStatus(directory.meta);
+    renderStats();
+    renderUsersTable(allUsers);
+    showToast('Kullanıcı listesi güncellendi.');
+  } catch (error) {
+    console.error('Admin directory refresh failed:', error?.code || error?.message);
+    showToast('Kullanıcı listesi yenilenemedi.');
+  } finally {
+    if (btnRefreshUsers) {
+      btnRefreshUsers.disabled = false;
+      btnRefreshUsers.textContent = '↻ Kullanıcıları Yenile';
+    }
+  }
 }
 
 function renderUsersTable(usersToRender) {
@@ -215,6 +250,9 @@ function showUserFortunesModal(userObj) {
 }
 
 function setupDashboardEventListeners() {
+  if (btnRefreshUsers) {
+    btnRefreshUsers.addEventListener('click', refreshUserDirectory);
+  }
   if (searchUserInput) {
     searchUserInput.addEventListener('input', (e) => {
       const term = e.target.value.toLowerCase().trim();

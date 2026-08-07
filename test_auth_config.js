@@ -84,7 +84,7 @@ test('iOS target is entitled and configured for Sign in with Apple', () => {
   assert.match(iosEntitlements, /<string>Default<\/string>/);
   assert.match(xcodeProject, /CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements/);
   assert.match(xcodeProject, /com\.apple\.SignInWithApple/);
-  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 8/);
+  assert.match(xcodeProject, /CURRENT_PROJECT_VERSION = 9/);
   assert.match(xcodeProject, /TARGETED_DEVICE_FAMILY = "1,2"/);
 });
 
@@ -160,8 +160,11 @@ test('admin mutations are validated by callable server operations', () => {
   assert.match(functionsSource, /getAuth\(\)\.listUsers\(1000, pageToken\)/);
   assert.match(functionsSource, /db\.doc\(`users\/\$\{user\.uid\}`\)/);
   assert.match(functionsSource, /authUserCount: authUsers\.length/);
+  assert.match(functionsSource, /authUser\?\.metadata\?\.lastSignInTime/);
+  assert.match(functionsSource, /new Date\(authLastLogin \|\| 0\)\.getTime\(\)/);
   assert.match(functionsSource, /exports\.adminUpdateAppSettings = onCall/);
   assert.match(authSource, /callAdminFunction\("adminListUsers"\)/);
+  assert.match(adminHtml, /id="btn-refresh-users"/);
   assert.match(authSource, /callAdminFunction\("adminUpdateAppSettings"/);
 });
 
@@ -208,12 +211,18 @@ test('anonymous UI uses configurable limits and keeps device history without a U
   assert.match(historySource, /History file mirror could not be written/);
 });
 
-test('reward progress reopens after a consumed credit until nine daily ads', () => {
+test('reward progress reopens after a consumed credit until three daily presentations', () => {
   const adSource = fs.readFileSync(new URL('./adManager.js', import.meta.url), 'utf8');
-  assert.match(adSource, /DEFAULT_DAILY_AD_LIMIT = 9/);
+  assert.match(adSource, /DEFAULT_DAILY_AD_LIMIT = 3/);
   assert.match(adSource, /watchedToday % adsPerCredit/);
   assert.match(adSource, /canEarnMore/);
   assert.match(mainSource, /qCount < 1 &&\s*progress\.canEarnMore/);
+});
+
+test('profile actions remain above the native banner safe area', () => {
+  assert.match(styles, /html\.native-ad-banner-visible \.modal-overlay/);
+  assert.match(styles, /html\.native-ad-banner-visible \.profile-modal-box/);
+  assert.match(styles, /var\(--native-ad-banner-height, 50px\)/);
 });
 
 test('premium delivery starts from approved content with a safe AI adaptation fallback', () => {

@@ -26,7 +26,7 @@ const TEST_APP_OPEN_IDS = {
 };
 const AppOpenAd = registerPlugin("AppOpenAd");
 const AD_STATE_CACHE_MS = 5 * 60 * 1000;
-const DEFAULT_DAILY_AD_LIMIT = 9;
+const DEFAULT_DAILY_AD_LIMIT = 3;
 
 class AdManager {
   constructor() {
@@ -48,7 +48,7 @@ class AdManager {
       credits: 0,
       rewardedToday: 0,
       dailyLimit: DEFAULT_DAILY_AD_LIMIT,
-      adsPerCredit: 3,
+      adsPerCredit: 1,
     };
   }
 
@@ -235,7 +235,7 @@ class AdManager {
         credits: 0,
         rewardedToday: 0,
         dailyLimit: DEFAULT_DAILY_AD_LIMIT,
-        adsPerCredit: 3,
+        adsPerCredit: 1,
       };
       this.lastRefreshAt = Date.now();
       return this.state;
@@ -273,7 +273,7 @@ class AdManager {
       Number(this.state.dailyLimit) || DEFAULT_DAILY_AD_LIMIT,
       1,
     );
-    const adsPerCredit = Math.max(Number(this.state.adsPerCredit) || 3, 1);
+    const adsPerCredit = Math.max(Number(this.state.adsPerCredit) || 1, 1);
     const canEarnMore = watchedToday < dailyLimit;
     return {
       current: canEarnMore
