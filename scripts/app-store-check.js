@@ -9,6 +9,8 @@ const expectedFirebaseSenderId = '53381061591';
 const expectedFirebaseWebAppId = '1:53381061591:web:a06506081fc5ef2fd04992';
 const expectedFirebaseIosAppId = '1:53381061591:ios:a47ef8928c618a83d04992';
 const sampleAdMobPublisher = 'ca-app-pub-3940256099942544';
+const expectedAppAdsEntry =
+  'google.com, pub-1148080339435668, DIRECT, f08c47fec0942fa0';
 const errors = [];
 const warnings = [];
 
@@ -92,6 +94,13 @@ if ((env.VITE_REVENUECAT_IOS_API_KEY || '').startsWith('test_')) {
 
 if ((env.VITE_ADMOB_IOS_REWARDED_AD_UNIT_ID || '').startsWith(sampleAdMobPublisher)) {
   errors.push('VITE_ADMOB_IOS_REWARDED_AD_UNIT_ID Google test reklam birimi olamaz.');
+}
+
+const appAdsPath = fullPath('public/app-ads.txt');
+if (!fs.existsSync(appAdsPath)) {
+  errors.push('public/app-ads.txt eksik; AdMob uygulama doğrulaması tamamlanamaz.');
+} else if (!fs.readFileSync(appAdsPath, 'utf8').split(/\r?\n/).includes(expectedAppAdsEntry)) {
+  errors.push('public/app-ads.txt beklenen AdMob yayıncı kaydını içermiyor.');
 }
 
 const project = read('ios/App/App.xcodeproj/project.pbxproj');
