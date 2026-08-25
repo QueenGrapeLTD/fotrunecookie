@@ -103,6 +103,27 @@ export async function saveFortuneToHistory(fortuneItem, ownerUid = null) {
   }
 }
 
+export async function updateFortuneInHistory(id, updates, ownerUid = null) {
+  if (!id || !updates || typeof updates !== 'object') return null;
+  const history = await getStoredHistory();
+  const index = history.findIndex(item =>
+    String(item?.id || '') === String(id) &&
+    (ownerUid ? item?.ownerUid === ownerUid : !item?.ownerUid)
+  );
+  if (index < 0) return null;
+
+  const safeUpdates = {
+    reflection: String(updates.reflection || '').trim().slice(0, 500),
+    reaction: ['keep', 'act', 'release'].includes(updates.reaction)
+      ? updates.reaction
+      : '',
+    reflectedAt: updates.reflectedAt || new Date().toISOString(),
+  };
+  history[index] = { ...history[index], ...safeUpdates };
+  await writeStoredHistory(history);
+  return history[index];
+}
+
 export async function mergeHistoryFromCloud(cloudItems, ownerUid) {
   if (!ownerUid) return getHistory(null);
 

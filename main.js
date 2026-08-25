@@ -7,6 +7,7 @@ import {
   saveProfile,
   getHistory,
   saveFortuneToHistory,
+  updateFortuneInHistory,
   mergeHistoryFromCloud,
   clearHistory,
   checkAnniversaryFortunes
@@ -102,6 +103,19 @@ let appSettings = {
   premiumDailyLimit: 5
 };
 let accountStateCache = null;
+const isIOSPlatform = Capacitor.getPlatform() === 'ios';
+
+function getFortuneProfileForPlatform() {
+  if (!isIOSPlatform) return userProfile;
+  return {
+    ...userProfile,
+    birthdate: '',
+    birthtime: '',
+    birthplace: '',
+    zodiac: '',
+    risingSign: '',
+  };
+}
 
 let lastGeneratedFortune = {
   quote: '',
@@ -113,6 +127,7 @@ let lastGeneratedFortune = {
   contentSource: '',
   variantType: '',
   requestId: ''
+  ,historyId: ''
 };
 
 function recordFortuneEvent(eventType) {
@@ -170,6 +185,10 @@ const btnOpenHistory = document.getElementById('btn-open-history');
 const modalHistory = document.getElementById('modal-history');
 const btnCloseHistory = document.getElementById('btn-close-history');
 const historyListContainer = document.getElementById('history-list-container');
+const reflectionNote = document.getElementById('reflection-note');
+const btnSaveReflection = document.getElementById('btn-save-reflection');
+const reflectionSaved = document.getElementById('reflection-saved');
+let selectedReflectionReaction = '';
 
 // Result Card DOM
 const cardTitleText = document.getElementById('card-title-text');
@@ -252,6 +271,10 @@ async function init() {
     document.documentElement.classList.toggle(
       'platform-android',
       Capacitor.getPlatform() === 'android',
+    );
+    document.documentElement.classList.toggle(
+      'platform-ios',
+      Capacitor.getPlatform() === 'ios',
     );
 
     setBootstrapStatus(t('bootstrapSettings'));
@@ -1068,6 +1091,14 @@ async function renderFortuneResult(fortuneText, generation = {}) {
   const resultCard = fortuneQuoteText.closest('.fortune-card');
   const normalizedFortuneLength = String(fortuneText || '').trim().length;
 
+  selectedReflectionReaction = '';
+  if (reflectionNote) reflectionNote.value = '';
+  if (reflectionSaved) reflectionSaved.classList.add('hidden');
+  document.querySelectorAll('.reflection-reaction').forEach(button => {
+    button.classList.remove('is-selected');
+    button.setAttribute('aria-pressed', 'false');
+  });
+
   fortuneQuoteText.textContent = `"${fortuneText}"`;
   if (resultCard) {
     resultCard.dataset.quoteSize =
@@ -1079,7 +1110,7 @@ async function renderFortuneResult(fortuneText, generation = {}) {
     <div class="number-badge">${num < 10 ? '0' + num : num}</div>
   `).join('');
 
-  if (userProfile.zodiac) {
+  if (!isIOSPlatform && userProfile.zodiac) {
     const zObj = zodiacSigns.find(z => z.id === userProfile.zodiac);
     if (zObj) {
       zodiacBadgeIcon.textContent = zObj.icon;
@@ -1126,6 +1157,7 @@ async function renderFortuneResult(fortuneText, generation = {}) {
         ? auth.currentUser.uid
         : null,
     );
+    if (savedFortune) lastGeneratedFortune.historyId = savedFortune.id;
     if (
       savedFortune &&
       auth.currentUser &&
@@ -1209,6 +1241,7 @@ async function crackCookie() {
   const animationStartedAt = Date.now();
   const hasAdQuery = adManager.getPremiumQueries() > 0;
   const isAiModeActive = isPremium || hasAdQuery;
+  const fortuneProfile = getFortuneProfileForPlatform();
 
   triggerHapticFeedback(3);
   soundManager.playCrack();
@@ -1220,7 +1253,7 @@ async function crackCookie() {
     let fortuneText = '';
     let generation = {};
     if (isPremium) {
-      const result = await fetchRemoteAIPrediction(userProfile, currentLang, {
+      const result = await fetchRemoteAIPrediction(fortuneProfile, currentLang, {
         requireRemote: true,
       });
       fortuneText = result.prediction;
@@ -1229,13 +1262,13 @@ async function crackCookie() {
     } else {
       const consumed = await adManager.consumePremiumQuery();
       if (consumed) {
-        const result = await fetchRemoteAIPrediction(userProfile, currentLang, {
+        const result = await fetchRemoteAIPrediction(fortuneProfile, currentLang, {
           requireRemote: true,
         });
         fortuneText = result.prediction;
         generation = result;
       } else {
-        fortuneText = getRandomFortune(currentLang, userProfile.category || 'general', userProfile);
+        fortuneText = getRandomFortune(currentLang, userProfile.category || 'general', fortuneProfile);
         await incrementDailyCrackCount();
       }
     }
@@ -1304,6 +1337,23 @@ async function renderHistoryList() {
     }
   }
   const texts = uiText[currentLang] || uiText.en;
+  const reflectedCount = history.filter(item => item.reflection || item.reaction).length;
+  const dayKeys = [...new Set(history.map(item => String(item.timestamp || '').slice(0, 10)).filter(Boolean))].sort().reverse();
+  let streak = 0;
+  if (dayKeys.length) {
+    const cursor = new Date(`${dayKeys[0]}T12:00:00`);
+    for (const dayKey of dayKeys) {
+      if (dayKey !== cursor.toISOString().slice(0, 10)) break;
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+  }
+  const journeyTotal = document.getElementById('journey-total');
+  const journeyReflections = document.getElementById('journey-reflections');
+  const journeyStreak = document.getElementById('journey-streak');
+  if (journeyTotal) journeyTotal.textContent = String(history.length);
+  if (journeyReflections) journeyReflections.textContent = String(reflectedCount);
+  if (journeyStreak) journeyStreak.textContent = String(streak);
   if (!history || history.length === 0) {
     historyListContainer.innerHTML = `<p class="no-history-text">${texts.noHistory}</p>`;
     return;
@@ -1330,6 +1380,7 @@ async function renderHistoryList() {
       <div class="history-item-numbers">
         ${safeNumbers.map(num => `<span>${num < 10 ? '0' + num : num}</span>`).join('')}
       </div>
+      ${item.reflection ? `<p class="history-item-reflection">🌸 ${escapeHtml(item.reflection)}</p>` : ''}
     </div>
   `;
   }).join('');
@@ -1358,6 +1409,33 @@ async function renderHistoryList() {
       }
     });
   });
+}
+
+async function saveCurrentReflection() {
+  if (!lastGeneratedFortune.historyId) {
+    showToast(t('reflectionSaveError'));
+    return;
+  }
+  const ownerUid = auth.currentUser?.isAnonymous ? null : auth.currentUser?.uid || null;
+  const updated = await updateFortuneInHistory(
+    lastGeneratedFortune.historyId,
+    {
+      reflection: reflectionNote?.value || '',
+      reaction: selectedReflectionReaction,
+      reflectedAt: new Date().toISOString(),
+    },
+    ownerUid,
+  );
+  if (!updated) {
+    showToast(t('reflectionSaveError'));
+    return;
+  }
+  if (ownerUid && accountStateCache?.isPremium === true) {
+    syncFortuneToCloud(updated).catch(error => console.warn('Reflection cloud sync deferred:', error));
+  }
+  if (reflectionSaved) reflectionSaved.classList.remove('hidden');
+  showToast(t('reflectionSaved'));
+  recordFortuneEvent('reflection_saved');
 }
 
 async function handleSaveProfile() {
@@ -1501,12 +1579,30 @@ function updateLanguageUI() {
   if (luckyTitleText) luckyTitleText.textContent = t('luckyTitle');
   if (btnAgainText) btnAgainText.textContent = t('again');
   if (btnStoryText) btnStoryText.textContent = t('storyCard');
+  const reflectionBindings = {
+    'reflection-title': 'reflectionTitle',
+    'reflection-subtitle': 'reflectionSubtitle',
+    'reflection-keep': 'reflectionKeep',
+    'reflection-act': 'reflectionAct',
+    'reflection-release': 'reflectionRelease',
+    'reflection-note-label': 'reflectionNoteLabel',
+    'reflection-save-text': 'reflectionSave',
+    'reflection-saved': 'reflectionSaved',
+    'journey-total-label': 'journeyMessages',
+    'journey-reflections-label': 'journeyReflections',
+    'journey-streak-label': 'journeyStreak',
+  };
+  Object.entries(reflectionBindings).forEach(([id, key]) => {
+    const element = document.getElementById(id);
+    if (element) element.textContent = t(key);
+  });
+  if (reflectionNote) reflectionNote.placeholder = t('reflectionPlaceholder');
   if (modalTitleText) modalTitleText.textContent = texts.modalTitle;
   const btnShareStoryText = document.getElementById('btn-share-story-text');
   if (btnShareStoryText) btnShareStoryText.textContent = t('shareStory');
 
   document.getElementById('profile-title-text').textContent = texts.profileTitle;
-  document.getElementById('history-title-text').textContent = texts.historyTitle;
+  document.getElementById('history-title-text').textContent = t('journeyTitle');
   const labelZodiac = document.getElementById('label-profile-zodiac');
   if (labelZodiac) labelZodiac.textContent = texts.selectZodiac;
   document.getElementById('label-profile-category').textContent = texts.selectCategory;
@@ -1695,7 +1791,7 @@ function updateLanguageUI() {
 let activeStoryCanvas = null;
 
 async function openStoryModal() {
-  const zObj = userProfile.zodiac ? zodiacSigns.find(z => z.id === userProfile.zodiac) : null;
+  const zObj = !isIOSPlatform && userProfile.zodiac ? zodiacSigns.find(z => z.id === userProfile.zodiac) : null;
   const locZodiacName = zObj ? (zObj.name[currentLang] || zObj.name.en) : lastGeneratedFortune.zodiacName;
 
   activeStoryCanvas = await generateStoryCardCanvas({
@@ -2404,6 +2500,18 @@ function setupEventListeners() {
     await renderHistoryList();
   });
   btnCloseHistory.addEventListener('click', () => modalHistory.classList.add('hidden'));
+
+  document.querySelectorAll('.reflection-reaction').forEach(button => {
+    button.addEventListener('click', () => {
+      selectedReflectionReaction = button.dataset.reaction || '';
+      document.querySelectorAll('.reflection-reaction').forEach(item => {
+        const selected = item === button;
+        item.classList.toggle('is-selected', selected);
+        item.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      });
+    });
+  });
+  if (btnSaveReflection) btnSaveReflection.addEventListener('click', saveCurrentReflection);
 
   // Story Modal
   const btnShareStory = document.getElementById('btn-share-story');
