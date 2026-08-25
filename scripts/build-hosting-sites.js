@@ -16,6 +16,7 @@ copyFileSync(resolve(root, 'privacy.html'), resolve(publicOut, 'privacy.html'));
 copyFileSync(resolve(root, 'delete-account.html'), resolve(publicOut, 'delete-account.html'));
 copyFileSync(resolve(root, 'legal.css'), resolve(publicOut, 'legal.css'));
 copyFileSync(resolve(root, 'hosting.css'), resolve(publicOut, 'hosting.css'));
+copyFileSync(resolve(root, 'public', 'app-ads.txt'), resolve(publicOut, 'app-ads.txt'));
 copyFileSync(resolve(root, 'public', 'favicon-32.png'), resolve(publicOut, 'favicon-32.png'));
 copyFileSync(resolve(root, 'public', 'apple-touch-icon.png'), resolve(publicOut, 'apple-touch-icon.png'));
 mkdirSync(resolve(publicOut, 'brand'), { recursive: true });
