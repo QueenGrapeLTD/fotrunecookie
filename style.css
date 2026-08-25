@@ -263,7 +263,7 @@ body {
   height: 220px;
   cursor: pointer;
   outline: none;
-  touch-action: manipulation;
+  touch-action: none;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -1329,6 +1329,8 @@ body {
     calc(16px + var(--safe-area-bottom))
     calc(16px + var(--safe-area-left));
   animation: overlayFadeIn 0.22s ease;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 @keyframes overlayFadeIn {
   from { opacity: 0; }
@@ -2117,7 +2119,7 @@ body {
 
 /* Reserve space for the native adaptive banner so it never covers controls. */
 :root {
-  --native-ad-banner-height: 0px;
+  --native-ad-banner-height: 50px;
 }
 
 .reflection-ritual {
@@ -2154,9 +2156,9 @@ html.platform-ios #user-profile-badge #badge-user-zodiac,
 html.platform-ios #zodiac-active-badge { display: none !important; }
 html.platform-ios .ios-astrology-only { display: none !important; }
 
-html.native-ad-banner-visible body {
+html.native-ad-banner-visible #app {
   padding-bottom: calc(
-    var(--native-ad-banner-height, 50px) + env(safe-area-inset-bottom, 0px)
+    20px + var(--native-ad-banner-height, 50px) + var(--safe-area-bottom)
   );
 }
 
@@ -3269,13 +3271,17 @@ html.platform-android .social-btn-apple {
   max-width: 620px;
   max-height: min(92vh, 860px);
   padding: 24px;
+  contain: layout paint;
 }
 
 .profile-modal-box .modal-body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 0;
   padding: 2px 5px 12px 1px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .profile-modal-box .modal-actions {
@@ -3496,10 +3502,36 @@ html.platform-android .social-btn-apple {
 }
 
 @media (max-width: 640px) {
+  #modal-profile {
+    align-items: stretch;
+    padding:
+      calc(8px + var(--safe-area-top))
+      calc(8px + var(--safe-area-right))
+      calc(8px + var(--safe-area-bottom))
+      calc(8px + var(--safe-area-left));
+  }
+
   .profile-modal-box {
+    width: 100%;
+    height: 100%;
     max-width: 100%;
+    max-height: none;
+    min-height: 0;
     padding: 18px 14px;
-    border-radius: 22px;
+    border-radius: 18px;
+    animation: none;
+    transform: translateZ(0);
+  }
+
+  .profile-modal-box .modal-header,
+  .profile-modal-box .modal-actions {
+    flex: 0 0 auto;
+  }
+
+  .profile-modal-box input,
+  .profile-modal-box select,
+  .profile-modal-box textarea {
+    font-size: 16px !important;
   }
 
   .profile-grid-location {

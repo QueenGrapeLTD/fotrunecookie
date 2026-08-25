@@ -51,11 +51,25 @@ test("rewarded ads require server-verified credits", async () => {
   assert.match(clientSource, /RewardAdPluginEvents\.Rewarded/);
   assert.match(clientSource, /RewardAdPluginEvents\.FailedToLoad/);
   assert.match(clientSource, /RewardAdPluginEvents\.FailedToShow/);
+  assert.match(clientSource, /RewardAdPluginEvents\.Showed/);
+  assert.match(clientSource, /VITE_ADMOB_TEST_MODE === "true"/);
+  assert.match(clientSource, /if \(this\.isTestMode\(\)\) return TEST_REWARDED_IDS/);
+  assert.match(clientSource, /admob\/rewarded-load-failed/);
+  assert.match(clientSource, /admob\/no-fill/);
+  assert.match(clientSource, /isNoFillError/);
+  assert.match(clientSource, /admob\/rewarded-presentation-timeout/);
+  assert.match(clientSource, /admob\/rewarded-completion-timeout/);
+  assert.match(clientSource, /admob\/session-timeout/);
+  assert.match(clientSource, /npa:\s*this\.requestNonPersonalizedAds/);
   assert.match(clientSource, /rewardItem\?\.amount/);
   assert.match(clientSource, /pending:\s*true/);
   assert.match(clientSource, /ssv:\s*\{\s*userId:\s*uid/);
   assert.match(clientSource, /getAdRewardStateFromServer/);
   assert.doesNotMatch(clientSource, /localStorage/);
+  assert.doesNotMatch(
+    clientSource,
+    /await ensureFreemiumSession\(\);\s*await AdMob\.initialize/s,
+  );
 
   assert.match(serverSource, /verifyAdMobCallback/);
   assert.match(serverSource, /ADMOB_REWARDED_AD_UNIT_IDS/);
@@ -70,6 +84,7 @@ test("rewarded ads require server-verified credits", async () => {
 
 test("native display ads use platform-specific app-open and banner units", async () => {
   const clientSource = await readFile(new URL("./adManager.js", import.meta.url), "utf8");
+  const mainSource = await readFile(new URL("./main.js", import.meta.url), "utf8");
   const androidPlugin = await readFile(
     new URL(
       "./android/app/src/main/java/com/fortunecookieai/app/AppOpenAdPlugin.java",
@@ -98,6 +113,7 @@ test("native display ads use platform-specific app-open and banner units", async
   assert.match(clientSource, /syncDisplayAds\(\{ isPremium = false \}/);
   assert.match(clientSource, /if \(isPremium\) \{\s*await this\.hideBanner\(\)/);
   assert.match(clientSource, /appOpenShownThisLaunch/);
+  assert.match(mainSource, /if \(accountState\) void adManager\.syncDisplayAds/);
   assert.match(androidPlugin, /AppOpenAd\.load\(/);
   assert.match(androidPlugin, /MAX_CACHE_AGE_MS = 4L \* 60L \* 60L \* 1000L/);
   assert.match(iosPlugin, /AppOpenAd\.load\(with: adId, request: Request\(\)\)/);

@@ -280,7 +280,7 @@ async function init() {
     setBootstrapStatus(t('bootstrapSettings'));
     userProfile = await settleWithTimeout(
       getProfile(currentLang),
-      5000,
+      800,
       'Profile',
       userProfile,
     );
@@ -293,7 +293,7 @@ async function init() {
     setBootstrapStatus(t('bootstrapSession'));
     await settleWithTimeout(
       ensureFreemiumSession(),
-      5000,
+      1200,
       'Firebase session',
       null,
     );
@@ -305,13 +305,17 @@ async function init() {
       settleWithTimeout(initRevenueCat(), 7000, 'RevenueCat', null),
     ]).then(() => updateAdStatusUI()).catch(() => {});
 
-    setBootstrapStatus(t('bootstrapSettings'));
-    appSettings = await settleWithTimeout(
+    // Remote settings and account state refine the already usable local UI.
+    // They must never hold the first screen behind a network-dependent gate.
+    void settleWithTimeout(
       getAppSettingsFromCloud(),
       5000,
       'Cloud settings',
       appSettings,
-    );
+    ).then((settings) => {
+      appSettings = settings || appSettings;
+      return updateAdStatusUI();
+    }).catch(() => {});
     const profileLanguage = normalizeLanguage(userProfile?.preferredLanguage, '');
     if (profileLanguage && profileLanguage !== currentLang) {
       currentLang = profileLanguage;
@@ -342,15 +346,12 @@ async function init() {
     renderCategoryPills();
     updateLanguageUI();
 
-    // Keep the loading surface visible until the first authenticated or
-    // anonymous account state has actually populated the UI.
-    await settleWithTimeout(
+    void settleWithTimeout(
       initialUserHydration,
-      12000,
+      5000,
       'Initial account hydration',
       null,
-    );
-    await settleWithTimeout(updateAdStatusUI(), 7000, 'Account status', null);
+    ).then(() => updateAdStatusUI()).catch(() => {});
   } catch (error) {
     console.error('Application bootstrap failed:', error);
   } finally {
@@ -377,7 +378,7 @@ async function updateAdStatusUI(forceRefresh = false) {
   const isPremium =
     accountState?.isPremium === true ||
     accountState?.membershipTier === 'premium';
-  void adManager.syncDisplayAds({ isPremium });
+  if (accountState) void adManager.syncDisplayAds({ isPremium });
   const premiumLimit =
     Number(accountState?.premiumUsage?.limit) ||
     Number(appSettings.premiumDailyLimit) ||
@@ -1969,6 +1970,8 @@ function renderAuthenticatedAccount(user, { closeProfile = false } = {}) {
 }
 
 function setupEventListeners() {
+  let lastCookieTouchAt = 0;
+
   const registerCookieTap = (event) => {
     if (event?.cancelable) event.preventDefault();
     if (isAnimating || fortuneRequestInFlight) return;
@@ -1997,8 +2000,22 @@ function setupEventListeners() {
     void crackCookie();
   };
 
+  // iOS decides whether to zoom before dblclick fires. Cancelling touchend keeps
+  // rapid cookie taps inside the app and also suppresses the synthetic click.
+  cookieInteractive.addEventListener('touchend', (event) => {
+    event.preventDefault();
+    lastCookieTouchAt = Date.now();
+    registerCookieTap(event);
+  }, { passive: false });
+
   // Three deliberate taps reveal progressive cracks, then start one request.
-  cookieInteractive.addEventListener('click', registerCookieTap);
+  cookieInteractive.addEventListener('click', (event) => {
+    if (Date.now() - lastCookieTouchAt < 750) {
+      event.preventDefault();
+      return;
+    }
+    registerCookieTap(event);
+  });
   cookieInteractive.addEventListener('dblclick', (event) => {
     event.preventDefault();
   });
@@ -2331,8 +2348,12 @@ function setupEventListeners() {
       };
       if (authLoggedBox) authLoggedBox.classList.add('hidden');
       if (authUnloggedBox) authUnloggedBox.classList.remove('hidden');
-      await refreshAppUIState();
       markInitialUserHydrationReady();
+      updateProfileBadge();
+      await updateAstrologyCalculations();
+      void updateAdStatusUI().catch((error) => {
+        console.warn('Anonymous account status refresh deferred:', error?.message);
+      });
       return;
     }
 
@@ -2361,6 +2382,7 @@ function setupEventListeners() {
 
       // Firestore'dan gelen üyelik bilgisi belliyse sayaç geçmiş eşitlemesini beklemez.
       renderAuthenticatedAccount(user);
+      markInitialUserHydrationReady();
 
       if (syncedProfile) {
         if (syncedProfile.displayName) {
@@ -2445,7 +2467,6 @@ function setupEventListeners() {
 
       // Kullanım kartını uzun sürebilen geçmiş indirme/yükleme işlemlerinden önce göster.
       await refreshAppUIState();
-      markInitialUserHydrationReady();
       // Store SDK identification is useful but must not hold the login screen.
       void identifyRevenueCatUser(user.uid).catch((error) => {
         console.warn('RevenueCat user identification deferred:', error?.message);

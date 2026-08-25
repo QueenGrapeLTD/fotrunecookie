@@ -4,7 +4,13 @@ import process from 'node:process';
 
 const root = process.cwd();
 const expectedAppId = 'com.fortunecookieai.app';
+const expectedFirebaseProjectId = 'fortunecookieai-prod';
+const expectedFirebaseSenderId = '53381061591';
+const expectedFirebaseWebAppId = '1:53381061591:web:a06506081fc5ef2fd04992';
+const expectedFirebaseIosAppId = '1:53381061591:ios:a47ef8928c618a83d04992';
 const sampleAdMobPublisher = 'ca-app-pub-3940256099942544';
+const expectedAppAdsEntry =
+  'google.com, pub-1148080339435668, DIRECT, f08c47fec0942fa0';
 const errors = [];
 const warnings = [];
 
@@ -41,6 +47,12 @@ function requireEnv(env, key) {
 }
 
 const env = readEnv(fullPath('.env'));
+if (env.VITE_ADMOB_TEST_MODE === 'true' || process.env.VITE_ADMOB_TEST_MODE === 'true') {
+  errors.push('App Store derlemesinde VITE_ADMOB_TEST_MODE etkin olamaz.');
+}
+if (env.VITE_DEVICE_DIAGNOSTICS === 'true' || process.env.VITE_DEVICE_DIAGNOSTICS === 'true') {
+  errors.push('App Store derlemesinde VITE_DEVICE_DIAGNOSTICS etkin olamaz.');
+}
 for (const key of [
   'VITE_FIREBASE_API_KEY',
   'VITE_FIREBASE_AUTH_DOMAIN',
@@ -52,6 +64,15 @@ for (const key of [
   'VITE_ADMOB_IOS_BANNER_AD_UNIT_ID',
 ]) {
   requireEnv(env, key);
+}
+if (env.VITE_FIREBASE_PROJECT_ID !== expectedFirebaseProjectId) {
+  errors.push(`VITE_FIREBASE_PROJECT_ID ${expectedFirebaseProjectId} değil.`);
+}
+if (env.VITE_FIREBASE_MESSAGING_SENDER_ID !== expectedFirebaseSenderId) {
+  errors.push(`VITE_FIREBASE_MESSAGING_SENDER_ID ${expectedFirebaseSenderId} değil.`);
+}
+if (env.VITE_FIREBASE_APP_ID !== expectedFirebaseWebAppId) {
+  errors.push('VITE_FIREBASE_APP_ID production web uygulamasına ait değil.');
 }
 
 const functionsEnv = readEnv(fullPath('functions/.env'));
@@ -83,6 +104,13 @@ for (const key of [
   if ((env[key] || '').startsWith(sampleAdMobPublisher)) {
     errors.push(`${key} Google test reklam birimi olamaz.`);
   }
+}
+
+const appAdsPath = fullPath('public/app-ads.txt');
+if (!fs.existsSync(appAdsPath)) {
+  errors.push('public/app-ads.txt eksik; AdMob uygulama doğrulaması tamamlanamaz.');
+} else if (!fs.readFileSync(appAdsPath, 'utf8').split(/\r?\n/).includes(expectedAppAdsEntry)) {
+  errors.push('public/app-ads.txt beklenen AdMob yayıncı kaydını içermiyor.');
 }
 
 const project = read('ios/App/App.xcodeproj/project.pbxproj');
@@ -143,6 +171,15 @@ if (!iosFirebase) {
 } else if (plistValue(iosFirebase, 'BUNDLE_ID') !== expectedAppId) {
   errors.push(`${iosFirebasePath} ${expectedAppId} bundle id'sine ait değil.`);
 } else {
+  if (plistValue(iosFirebase, 'PROJECT_ID') !== expectedFirebaseProjectId) {
+    errors.push(`${iosFirebasePath} ${expectedFirebaseProjectId} projesine ait değil.`);
+  }
+  if (plistValue(iosFirebase, 'GCM_SENDER_ID') !== expectedFirebaseSenderId) {
+    errors.push(`${iosFirebasePath} production sender id'sine ait değil.`);
+  }
+  if (plistValue(iosFirebase, 'GOOGLE_APP_ID') !== expectedFirebaseIosAppId) {
+    errors.push(`${iosFirebasePath} App Store iOS Firebase uygulamasına ait değil.`);
+  }
   const reversedClientId = plistValue(iosFirebase, 'REVERSED_CLIENT_ID');
   if (!reversedClientId || !infoPlist.includes(`<string>${reversedClientId}</string>`)) {
     errors.push('Google REVERSED_CLIENT_ID, Info.plist CFBundleURLSchemes içinde yok.');

@@ -70,10 +70,17 @@ public class AppOpenAdPlugin: CAPPlugin, CAPBridgedPlugin, FullScreenContentDele
             call.reject("App open ad is not ready", "admob/app-open-not-ready")
             return
         }
+        guard let viewController = bridge?.viewController else {
+            call.reject(
+                "App open ad presenter is unavailable",
+                "admob/app-open-presenter-unavailable"
+            )
+            return
+        }
 
         DispatchQueue.main.async {
             self.isShowing = true
-            ad.present(from: self.getRootVC())
+            ad.present(from: viewController)
             call.resolve(["shown": true])
         }
     }

@@ -6,10 +6,11 @@ import {
 } from "firebase/app-check";
 import {
   getAuth,
+  initializeAuth,
+  browserLocalPersistence,
   signInAnonymously,
   signInWithPopup,
   signInWithCredential,
-  signInWithCustomToken,
   linkWithCredential,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -22,8 +23,6 @@ import {
   OAuthProvider,
   signOut as firebaseSignOut,
   onAuthStateChanged,
-  setPersistence,
-  browserLocalPersistence,
 } from "firebase/auth";
 import { Capacitor } from "@capacitor/core";
 import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
@@ -116,12 +115,14 @@ if (appCheckEnabled && appCheckSiteKey) {
   }
 }
 
-export const auth = getAuth(app);
-const authPersistenceReady = setPersistence(auth, browserLocalPersistence).catch(
-  (error) => {
-    console.warn("Persistent authentication could not be enabled:", error?.code);
-  },
-);
+// IndexedDB initialization can remain pending indefinitely in WKWebView even
+// when localStorage is healthy. Select localStorage at Auth construction time
+// on native platforms so session hydration and provider credential exchange do
+// not inherit that pending IndexedDB operation.
+export const auth = Capacitor.isNativePlatform()
+  ? initializeAuth(app, { persistence: browserLocalPersistence })
+  : getAuth(app);
+const authPersistenceReady = Promise.resolve(auth);
 // Auto-detect networks/proxies that interrupt Firestore's WebChannel transport.
 // This is especially useful for localhost development and restrictive mobile
 // networks, where the SDK can otherwise spend several seconds reconnecting.
@@ -175,10 +176,35 @@ function writeLocalCache(key, value) {
 const initialAuthState = authPersistenceReady.then(
   () =>
     new Promise((resolve) => {
-      const unsubscribe = onAuthStateChanged(auth, (user) => {
+      let settled = false;
+      let unsubscribe = () => {};
+      const finish = (user) => {
+        if (settled) return;
+        settled = true;
         unsubscribe();
-        resolve(user);
-      });
+        resolve(user || null);
+      };
+      unsubscribe = onAuthStateChanged(
+        auth,
+        (user) => {
+          console.info("[Auth] Initial session hydration completed.");
+          finish(user);
+        },
+        (error) => {
+          console.warn(
+            "[Auth] Initial session hydration failed:",
+            error?.code,
+            error?.message,
+          );
+          finish(auth.currentUser);
+        },
+      );
+      setTimeout(() => {
+        if (!settled) {
+          console.warn("[Auth] Initial session hydration timed out.");
+        }
+        finish(auth.currentUser);
+      }, 1000);
     }),
 );
 
@@ -190,8 +216,20 @@ export async function ensureFreemiumSession() {
   void restoredUser;
   if (auth.currentUser) return auth.currentUser;
   if (!anonymousSessionPromise) {
+    console.info("[Auth] Starting anonymous Firebase session.");
     anonymousSessionPromise = signInAnonymously(auth)
-      .then((result) => result.user)
+      .then((result) => {
+        console.info("[Auth] Anonymous Firebase session established.");
+        return result.user;
+      })
+      .catch((error) => {
+        console.warn(
+          "[Auth] Anonymous Firebase session failed:",
+          error?.code,
+          error?.message,
+        );
+        throw error;
+      })
       .finally(() => {
         anonymousSessionPromise = null;
       });
@@ -564,36 +602,19 @@ function waitForAuthRetry(delayMs) {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
-async function waitForAuthPersistenceAfterNativeCredential(timeoutMs = 1500) {
-  let timeoutId;
-  const timedOut = await Promise.race([
-    authPersistenceReady.then(() => false),
-    new Promise((resolve) => {
-      timeoutId = setTimeout(() => resolve(true), timeoutMs);
-    }),
-  ]);
-  clearTimeout(timeoutId);
-  if (timedOut) {
-    console.warn(
-      "Firebase persistence is still initializing; continuing native social sign-in.",
-    );
-  }
-}
-
-async function settleAuthOperation(operation, timeoutMs, label) {
+async function runAuthOperation(operation, timeoutMs, errorCode) {
   let timeoutId;
   try {
-    const completed = await Promise.race([
-      Promise.resolve(operation).then(() => true),
-      new Promise((resolve) => {
-        timeoutId = setTimeout(() => resolve(false), timeoutMs);
+    return await Promise.race([
+      Promise.resolve(operation),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          const error = new Error(errorCode);
+          error.code = errorCode;
+          reject(error);
+        }, timeoutMs);
       }),
     ]);
-    if (!completed) console.warn(`${label} timed out; continuing sign-in.`);
-    return completed;
-  } catch (error) {
-    console.warn(`${label} failed; continuing sign-in.`, error?.code || error?.message);
-    return false;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -610,9 +631,6 @@ async function requestNativeGoogleCredential() {
     try {
       return await FirebaseAuthentication.signInWithGoogle({
         useCredentialManager: true,
-        // The Capacitor WebView uses the Firebase JavaScript SDK. Request the
-        // Google credential without creating a second native Firebase session,
-        // then sign that credential into the WebView directly below.
         skipNativeAuth: true,
       });
     } catch (error) {
@@ -642,123 +660,66 @@ async function requestNativeGoogleCredential() {
   });
 }
 
-async function signInGoogleCredentialIntoWebView(nativeResult) {
-  const idToken = cleanString(nativeResult?.credential?.idToken, 8192);
-  if (!idToken) {
-    throw new Error("auth/google-credential-missing");
-  }
-
-  const credential = GoogleAuthProvider.credential(idToken);
-  await waitForAuthPersistenceAfterNativeCredential();
-
-  // Upgrade a new anonymous account in place. For a returning Google user the
-  // credential already belongs to another UID, so remove the temporary
-  // anonymous record and explicitly switch to the permanent account.
-  if (auth.currentUser?.isAnonymous) {
-    const anonymousUser = auth.currentUser;
-    try {
-      return await linkWithCredential(anonymousUser, credential);
-    } catch (error) {
-      if (
-        error?.code !== "auth/credential-already-in-use" &&
-        error?.code !== "auth/email-already-in-use"
-      ) {
-        throw error;
-      }
-
-      const deletedAnonymousUser = await settleAuthOperation(
-        deleteUser(anonymousUser),
-        3000,
-        "Anonymous account cleanup",
-      );
-      if (!deletedAnonymousUser) {
-        await settleAuthOperation(
-          firebaseSignOut(auth),
-          1500,
-          "Anonymous account sign-out",
-        );
-      }
-    }
-  } else if (auth.currentUser) {
-    await firebaseSignOut(auth);
-  }
-
-  return signInWithCredential(auth, credential);
-}
-
-async function bridgeNativeSessionIntoWebView(nativeResult, provider) {
-  const nativeUid = cleanString(nativeResult?.user?.uid, 128);
-  if (!nativeUid) {
-    throw new Error(`auth/${provider}-native-user-missing`);
-  }
-
-  const tokenResult = await FirebaseAuthentication.getIdToken({
-    forceRefresh: true,
-  });
-  if (!tokenResult?.token) {
-    throw new Error(`auth/${provider}-native-token-missing`);
-  }
-
-  const exchangeNativeAuthToken = httpsCallable(
-    functions,
-    "exchangeNativeAuthToken",
-  );
-  const exchangeResult = await exchangeNativeAuthToken({
-    nativeIdToken: tokenResult.token,
-  });
-  const customToken = exchangeResult?.data?.customToken;
-  if (!customToken) {
-    throw new Error("auth/native-session-bridge-failed");
-  }
-
-  await waitForAuthPersistenceAfterNativeCredential();
-  if (auth.currentUser?.isAnonymous) {
-    const anonymousUser = auth.currentUser;
-    const deletedAnonymousUser = await settleAuthOperation(
-      deleteUser(anonymousUser),
-      2000,
-      "Anonymous account cleanup",
-    );
-    if (!deletedAnonymousUser) {
-      await settleAuthOperation(
-        firebaseSignOut(auth),
-        1500,
-        "Anonymous account sign-out",
-      );
-    }
-  } else if (auth.currentUser && auth.currentUser.uid !== nativeUid) {
-    await firebaseSignOut(auth);
-  }
-
-  const result = await signInWithCustomToken(auth, customToken);
-  if (result.user.uid !== nativeUid) {
-    await firebaseSignOut(auth).catch(() => {});
-    throw new Error("auth/native-session-user-mismatch");
-  }
-  return preserveNativeAppleDisplayName(result, nativeResult, provider);
-}
-
 async function signInNatively(provider) {
   let nativeResult;
   if (provider === "apple") {
-    nativeResult = await FirebaseAuthentication.signInWithApple({
-      skipNativeAuth: false,
-    });
+    nativeResult = await runAuthOperation(
+      FirebaseAuthentication.signInWithApple({ skipNativeAuth: true }),
+      45000,
+      "auth/apple-provider-timeout",
+    );
   } else {
     // Credential Manager returns the Google ID token directly. The legacy
     // GoogleSignIn path also requests a separate OAuth access token after the
     // account picker; that second request can fail on physical/Play-installed
     // devices even though account selection itself succeeded. Keep the legacy
     // flow only as a compatibility fallback for older Android environments.
-    nativeResult = await requestNativeGoogleCredential();
-    return signInGoogleCredentialIntoWebView(nativeResult);
+    nativeResult = await runAuthOperation(
+      requestNativeGoogleCredential(),
+      45000,
+      "auth/google-provider-timeout",
+    );
   }
-  return bridgeNativeSessionIntoWebView(nativeResult, provider);
+
+  const nativeCredential = nativeResult?.credential;
+  if (!nativeCredential?.idToken) {
+    const error = new Error(`auth/${provider}-credential-missing`);
+    error.code = `auth/${provider}-credential-missing`;
+    throw error;
+  }
+
+  const credential = provider === "apple"
+    ? appleProvider.credential({
+        idToken: nativeCredential.idToken,
+        rawNonce: nativeCredential.nonce,
+        accessToken: nativeCredential.accessToken,
+      })
+    : GoogleAuthProvider.credential(
+        nativeCredential.idToken,
+        nativeCredential.accessToken || undefined,
+      );
+
+  console.info(`[Auth] ${provider} provider credential received.`);
+
+  // signInWithCredential replaces the anonymous JS session directly. An
+  // explicit sign-out adds another WebView persistence operation and can leave
+  // the provider flow waiting after the native account picker has completed.
+  const result = await runAuthOperation(
+    signInWithCredential(auth, credential),
+    20000,
+    `auth/${provider}-web-session-timeout`,
+  );
+  console.info(`[Auth] ${provider} Firebase web session established.`);
+  return preserveNativeAppleDisplayName(result, nativeResult, provider);
 }
 
 async function resetFailedNativeSocialSession() {
   if (!isNativeMobileAuthRuntime()) return;
-  await FirebaseAuthentication.signOut().catch(() => {});
+  await runAuthOperation(
+    FirebaseAuthentication.signOut(),
+    2000,
+    "auth/native-reset-timeout",
+  ).catch(() => {});
 }
 
 export async function signInWithGoogle() {
