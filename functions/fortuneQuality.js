@@ -17,6 +17,22 @@ const MOTIF_PATTERNS = {
   storm: /(?:^|\s)(fırtına\p{L}*|sars\p{L}*|storm\p{L}*|shake\p{L}*)(?=\s|$)/iu,
 };
 
+// These expressions intentionally target discouraging conclusions rather than
+// every negative word. A fortune may acknowledge uncertainty, but it must not
+// leave the reader feeling doomed, worthless, abandoned or hopeless.
+const DISCOURAGING_PATTERNS = [
+  /\b(?:umut\s+yok|değersiz(?:sin)?|başarısız(?:sın)?|çaresiz(?:sin)?|boşuna|asla\s+başaram|yalnız\s+kalacaksın|kaybedeceksin|geç\s+kaldın|pişman\s+olacaksın)\b/iu,
+  /\b(?:no\s+hope|hopeless|worthless|you(?:'|’)ll\s+fail|you\s+will\s+fail|you(?:'|’)ll\s+be\s+alone|you\s+will\s+be\s+alone|too\s+late|all\s+is\s+lost|regret\s+it)\b/iu,
+  /\b(?:hoffnungslos|wertlos|du\s+wirst\s+scheitern|du\s+wirst\s+allein\s+sein|alles\s+ist\s+verloren)\b/iu,
+  /\b(?:sans\s+espoir|tu\s+échoueras|vous\s+échouerez|tu\s+seras\s+seul|vous\s+serez\s+seul|tout\s+est\s+perdu)\b/iu,
+  /\b(?:sin\s+esperanza|fracasarás|estarás\s+solo|todo\s+está\s+perdido)\b/iu,
+  /\b(?:senza\s+speranza|fallirai|resterai\s+solo|tutto\s+è\s+perduto)\b/iu,
+  /(?:没有希望|毫无希望|你会失败|你将失败|你会孤独|一切都失去了)/u,
+  /(?:希望がない|絶望的|あなたは失敗する|ひとりになる|すべてを失う)/u,
+  /(?:희망이\s*없|절망적|실패할\s*것|혼자가\s*될|모든\s*것을\s*잃)/u,
+  /(?:χωρίς\s+ελπίδα|θα\s+αποτύχεις|θα\s+μείνεις\s+μόνος|όλα\s+χάθηκαν)/iu,
+];
+
 function normalizeText(value) {
   return String(value || "")
     .normalize("NFKD")
@@ -77,8 +93,14 @@ function isTooSimilar(candidate, recentFortunes = []) {
   });
 }
 
+function hasDiscouragingTone(value) {
+  const text = String(value || "").normalize("NFKC");
+  return DISCOURAGING_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 module.exports = {
   contentWords,
+  hasDiscouragingTone,
   isTooSimilar,
   jaccardSimilarity,
   motifSignature,

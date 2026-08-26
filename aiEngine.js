@@ -12,6 +12,8 @@ import { callGenerateFortuneCloudFunction } from './firebaseService.js';
 import { fortunesDatabase } from './fortunesData.js';
 import { isLikelyLanguage } from './languageGuard.js';
 
+const CUSTOM_FORTUNES_KEY = 'fc_custom_fortunes_db_v2';
+
 export const zodiacElements = {
   aries: { element: 'fire', quality: 'cardinal', ruler: 'Mars', symbol: '♈', aspect: 'passion' },
   taurus: { element: 'earth', quality: 'fixed', ruler: 'Venus', symbol: '♉', aspect: 'abundance' },
@@ -62,7 +64,7 @@ export function isFortuneSafe(value) {
 
 function getDatabase() {
   try {
-    const custom = localStorage.getItem('fc_custom_fortunes_db');
+    const custom = localStorage.getItem(CUSTOM_FORTUNES_KEY);
     if (custom) return JSON.parse(custom);
   } catch (error) {
     console.warn('Custom fortune database could not be read:', error);

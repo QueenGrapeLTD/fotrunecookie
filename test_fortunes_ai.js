@@ -15,6 +15,11 @@ test("fortune database has all supported languages and categories", () => {
         `missing ${language}.${category}`,
       );
       assert.ok(fortunesDatabase[language][category].length > 0);
+      assert.equal(
+        new Set(fortunesDatabase[language][category]).size,
+        fortunesDatabase[language][category].length,
+        `duplicate offline fortunes in ${language}.${category}`,
+      );
     }
   }
 });

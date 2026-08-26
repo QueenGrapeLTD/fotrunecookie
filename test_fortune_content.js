@@ -50,6 +50,18 @@ test('recent content is cooled down during selection', () => {
   assert.equal(selected.id, trItems[3].id);
 });
 
+test('an unseen anchor is always preferred over a recent exact repeat', () => {
+  const trItems = BUNDLED_FORTUNE_CONTENT.filter((item) => item.lang === 'tr');
+  const selected = selectApprovedContent({
+    lang: 'tr',
+    category: 'general',
+    recentContentIds: trItems.slice(0, 15).map((item) => item.id),
+    recentTexts: trItems.slice(0, 15).map((item) => item.text),
+    random: () => 0,
+  });
+  assert.equal(selected.id, trItems[15].id);
+});
+
 test('a cloud rejection overrides the matching bundled message', () => {
   const blocked = BUNDLED_FORTUNE_CONTENT[0];
   const selected = selectApprovedContent({

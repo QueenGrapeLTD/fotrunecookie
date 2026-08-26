@@ -1,5 +1,9 @@
 import { fortunesDatabase } from './fortunesData.js';
 import { generatePersonalizedAIFortune, fetchRemoteAIPrediction, zodiacElements } from './aiEngine.js';
+import { chooseNonRepeatingFortune } from './fortuneSelection.js';
+
+const CUSTOM_FORTUNES_KEY = 'fc_custom_fortunes_db_v2';
+const RECENT_FREE_FORTUNES_PREFIX = 'fc_recent_free_fortunes_v2';
 
 export { zodiacElements, fetchRemoteAIPrediction };
 
@@ -28,7 +32,7 @@ export const categories = [
 export const fortunes = fortunesDatabase;
 
 export function getFortunesDatabase() {
-  const custom = localStorage.getItem('fc_custom_fortunes_db');
+  const custom = localStorage.getItem(CUSTOM_FORTUNES_KEY);
   if (custom) {
     try {
       return JSON.parse(custom);
@@ -38,7 +42,29 @@ export function getFortunesDatabase() {
 }
 
 export function saveFortunesDatabase(db) {
-  localStorage.setItem('fc_custom_fortunes_db', JSON.stringify(db));
+  localStorage.setItem(CUSTOM_FORTUNES_KEY, JSON.stringify(db));
+}
+
+function selectNonRepeatingFortune(categoryList, lang, category) {
+  const storageKey = `${RECENT_FREE_FORTUNES_PREFIX}:${lang}:${category}`;
+  let recent = [];
+  try {
+    const stored = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    if (Array.isArray(stored)) recent = stored.filter(item => typeof item === 'string');
+  } catch {
+    recent = [];
+  }
+
+  const selection = chooseNonRepeatingFortune(categoryList, recent);
+  try {
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify(selection.recent),
+    );
+  } catch {
+    // A constrained WebView may deny storage; fortune selection still works.
+  }
+  return selection.selected;
 }
 
 export function getRandomFortune(lang = 'tr', category = 'general', userProfile = {}) {
@@ -47,8 +73,7 @@ export function getRandomFortune(lang = 'tr', category = 'general', userProfile 
   let categoryList = langFortunes[category] || langFortunes.general || Object.values(langFortunes)[0];
 
   if (Array.isArray(categoryList) && categoryList.length > 0) {
-    const randomIndex = Math.floor(Math.random() * categoryList.length);
-    const baseFortune = categoryList[randomIndex];
+    const baseFortune = selectNonRepeatingFortune(categoryList, lang, category);
     return generatePersonalizedAIFortune(userProfile, lang, baseFortune);
   }
 

@@ -6,6 +6,7 @@
     "shell": "firebase functions:shell",
     "start": "npm run shell",
     "test": "node --check index.js && node --test test_*.js",
+    "seed:fortune-content": "node seed-fortune-content.js",
     "set-admin": "node set-admin.js",
     "provision-reviewer": "node provision-store-reviewer.js",
     "deploy": "firebase deploy --only functions",

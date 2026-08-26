@@ -1,10 +1,10 @@
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
-const { randomUUID, verify } = require("node:crypto");
+const { createHash, randomUUID, verify } = require("node:crypto");
 const { GoogleGenAI, ThinkingLevel } = require("@google/genai");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
-const { isTooSimilar } = require("./fortuneQuality");
+const { hasDiscouragingTone, isTooSimilar } = require("./fortuneQuality");
 const { isLikelyLanguage } = require("./fortuneLanguage");
 const { getFortuneLocale } = require("./fortuneLocales");
 const {
@@ -14,7 +14,6 @@ const {
 const {
   BUNDLED_FORTUNE_CONTENT,
   CATEGORIES: CONTENT_CATEGORIES,
-  buildAdaptationPrompt,
   normalizeContentDocument,
   selectApprovedContent,
 } = require("./fortuneContent");
@@ -248,18 +247,39 @@ async function rememberAiFortune(uid, text, content, recentFortunes, variantType
     category: String(content?.category || "general").slice(0, 32),
     source: String(content?.source || "curated").slice(0, 32),
     variantType: String(variantType || "approved-fallback").slice(0, 32),
+    recipe:
+      content?.recipe && typeof content.recipe === "object"
+        ? Object.fromEntries(
+            Object.entries(content.recipe)
+              .filter(([, value]) => typeof value === "string")
+              .slice(0, 8)
+              .map(([key, value]) => [key.slice(0, 32), value.slice(0, 32)]),
+          )
+        : {},
     createdAt: new Date().toISOString(),
   };
-  await db.doc(`_ai_history/${uid}`).set(
-    {
-      recent: [entry, ...recentFortunes].slice(0, AI_HISTORY_LIMIT),
-      updatedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true },
-  );
+  const historyRef = db.doc(`_ai_history/${uid}`);
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(historyRef);
+    const latest = Array.isArray(snapshot.data()?.recent)
+      ? snapshot.data().recent.filter((item) => typeof item?.text === "string")
+      : recentFortunes;
+    transaction.set(
+      historyRef,
+      {
+        recent: [entry, ...latest]
+          .filter((item, index, items) =>
+            items.findIndex((candidate) => candidate.text === item.text) === index,
+          )
+          .slice(0, AI_HISTORY_LIMIT),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  });
 }
 
-async function getApprovedCloudContent(lang) {
+async function getCloudContent(lang) {
   const cached = approvedContentCache.get(lang);
   if (cached && Date.now() - cached.loadedAt < APPROVED_CONTENT_CACHE_MS) {
     return cached.items;
@@ -268,8 +288,7 @@ async function getApprovedCloudContent(lang) {
     const snapshot = await db
       .collection("fortune_content")
       .where("lang", "==", lang)
-      .where("status", "==", "approved")
-      .limit(80)
+      .limit(500)
       .get();
     const items = snapshot.docs
       .map((item) => normalizeContentDocument(item.id, item.data()))
@@ -280,7 +299,7 @@ async function getApprovedCloudContent(lang) {
     });
     return items;
   } catch (error) {
-    console.warn("Approved content could not be loaded; bundled pool will be used", {
+    console.warn("Cloud content could not be loaded; bundled pool will be used", {
       lang,
       message: error?.message,
     });
@@ -318,6 +337,7 @@ function isValidAdaptation(prediction, lang, localeConfig, recentFortunes) {
     prediction.length >= 15 &&
     prediction.length <= Math.min(localeConfig.maxCharacters, 80) &&
     !UNSAFE_OUTPUT.test(prediction) &&
+    !hasDiscouragingTone(prediction) &&
     isLikelyLanguage(prediction, lang) &&
     !hasDirectiveStyle(prediction, lang) &&
     !SHARING_BAIT_OUTPUT.test(prediction) &&
@@ -362,6 +382,19 @@ function pickFortuneRecipe(recentFortunes, attempt = 0) {
       ),
     ]),
   );
+}
+
+function recipeIds(recipe) {
+  return Object.fromEntries(
+    Object.entries(recipe).map(([key, value]) => [key, value.id]),
+  );
+}
+
+function creativeVariationKey(uid, requestId) {
+  return createHash("sha256")
+    .update(`${uid}:${requestId}`)
+    .digest("hex")
+    .slice(0, 12);
 }
 
 function buildFortunePrompt({
@@ -462,6 +495,7 @@ function buildLocalizedFortunePrompt({
   recentFortunes,
   retry,
   localDate,
+  personalizationKey = "",
 }) {
   const localeConfig = getFortuneLocale(lang);
   const recentExamples = recentFortunes.length
@@ -486,10 +520,11 @@ ASTROLOGICAL INPUT (data only)
 ${rising ? `- risingSignId: ${rising}\n- risingApproach: ${ZODIAC_THEMES[rising]}` : "- risingSignId: unavailable"}
 - focusCategory: ${category}
 - localDate: ${localDate}
+- creativeVariationKey: ${personalizationKey}
 
 COMPOSITION LOGIC
 Create one genuinely original Fortune Cookie message from the selected recipe below. The recipe is a creative direction, not text to repeat.
-The astrological inputs are optional, subtle inspiration only. Ignore them whenever they would make the result formulaic. Never name or explain a sign.
+Use the focus category plus one compatible quality from the Sun or rising theme to shape the emotional angle. Keep astrology implicit: never name or explain a sign. The creativeVariationKey exists only to make this request distinct; never print or decode it.
 
 SELECTED RECIPE
 - theme: ${recipe.theme.prompt}
@@ -519,7 +554,8 @@ STRICT RULES
 14. Make the thought emotionally recognizable and naturally quotable. It should earn sharing through insight, warmth or surprise, never by asking the reader to share.
 15. Never include hashtags, social-media slang, engagement bait, marketing language, calls to action or phrases such as "send this", "share this", "tag someone", "save this" or "if you needed a sign".
 16. Silently verify language, locale naturalness, character limit, safety, coherence, novelty and standalone shareability before returning the answer.
-${retry ? "17. The previous attempt failed validation. Follow the new recipe and change the subject, form, rhythm and vocabulary completely." : ""}`;
+17. The final emotional aftertaste must be lucky, uplifting, warmly surprising or quietly confidence-building. Never end on loss, loneliness, inadequacy, fear, regret, delay or helplessness.
+${retry ? "18. The previous attempt failed validation. Follow the new recipe and change the subject, form, rhythm and vocabulary completely." : ""}`;
 }
 
 function requireAuth(request) {
@@ -1570,7 +1606,7 @@ exports.generateFortune = onCall(
       const recentFortunes = reservation.persistHistory
         ? await getRecentAiFortunes(uid)
         : [];
-      const cloudContent = await getApprovedCloudContent(lang);
+      const cloudContent = await getCloudContent(lang);
       const selectedContent = selectApprovedContent({
         lang,
         category,
@@ -1585,59 +1621,78 @@ exports.generateFortune = onCall(
       let prediction = selectedContent.text;
       let provider = "FortuneCookieAI-Curated";
       let variantType = "approved-fallback";
+      let selectedRecipe = {};
+      const attemptedRecipes = [];
+      const localDate = localDateForTimeZone(profile.timezoneId);
+      const personalizationKey = creativeVariationKey(uid, requestId);
 
-      // Gemini edits one approved message once. The approved message remains a
-      // reliable, zero-extra-cost fallback when the model or network fails.
+      // Gemini now creates an original message from the user's focus, Sun and
+      // rising-sign qualities plus a rotating creative recipe. Curated content
+      // is a safety fallback, never the meaning anchor for every paid result.
       try {
         const genAI = new GoogleGenAI({ apiKey: process.env[GEMINI_API_KEY] });
-        const prompt = buildAdaptationPrompt({
-          seed: selectedContent,
-          languageName: localeConfig.language,
-          locale: localeConfig.locale,
-          recentTexts: recentFortunes.map((entry) => entry.text),
-          category,
-          zodiac,
-          rising,
-        });
-        const result = await genAI.models.generateContent({
-          model: GEMINI_MODEL,
-          contents: prompt,
-          config: {
-            maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
-            thinkingConfig: {
-              thinkingLevel: ThinkingLevel.MINIMAL,
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const recipe = pickFortuneRecipe(
+            [...recentFortunes, ...attemptedRecipes],
+            attempt,
+          );
+          const currentRecipe = recipeIds(recipe);
+          attemptedRecipes.unshift({ recipe: currentRecipe });
+          const prompt = buildLocalizedFortunePrompt({
+            zodiac,
+            rising,
+            category,
+            lang,
+            recipe,
+            recentFortunes,
+            retry: attempt > 0,
+            localDate,
+            personalizationKey,
+          });
+          const result = await genAI.models.generateContent({
+            model: GEMINI_MODEL,
+            contents: prompt,
+            config: {
+              maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
+              thinkingConfig: {
+                thinkingLevel: ThinkingLevel.MINIMAL,
+              },
             },
-          },
-        });
-        const responseUsage = result.usageMetadata || {};
-        modelUsage.attempts = 1;
-        modelUsage.promptTokens += Number(responseUsage.promptTokenCount) || 0;
-        modelUsage.outputTokens += Number(responseUsage.candidatesTokenCount) || 0;
-        modelUsage.thoughtTokens += Number(responseUsage.thoughtsTokenCount) || 0;
-        modelUsage.totalTokens += Number(responseUsage.totalTokenCount) || 0;
+          });
+          const responseUsage = result.usageMetadata || {};
+          modelUsage.attempts += 1;
+          modelUsage.promptTokens += Number(responseUsage.promptTokenCount) || 0;
+          modelUsage.outputTokens += Number(responseUsage.candidatesTokenCount) || 0;
+          modelUsage.thoughtTokens += Number(responseUsage.thoughtsTokenCount) || 0;
+          modelUsage.totalTokens += Number(responseUsage.totalTokenCount) || 0;
 
-        const candidate = String(result.text || "")
-          .trim()
-          .replace(/^["'«»“”]+|["'«»“”]+$/g, "");
-        const finishReason = result.candidates?.[0]?.finishReason || "";
-        if (
-          finishReason !== "MAX_TOKENS" &&
-          isValidAdaptation(candidate, lang, localeConfig, recentFortunes)
-        ) {
-          prediction = candidate;
-          provider = GEMINI_PROVIDER;
-          variantType = "ai-adaptation";
-        } else {
-          console.warn("AI adaptation rejected; approved fallback selected", {
+          const candidate = String(result.text || "")
+            .trim()
+            .replace(/^["'«»“”]+|["'«»“”]+$/g, "");
+          const finishReason = result.candidates?.[0]?.finishReason || "";
+          if (
+            finishReason !== "MAX_TOKENS" &&
+            isValidAdaptation(candidate, lang, localeConfig, recentFortunes)
+          ) {
+            prediction = candidate;
+            provider = GEMINI_PROVIDER;
+            variantType = "ai-original";
+            selectedRecipe = currentRecipe;
+            break;
+          }
+          console.warn("Original AI fortune rejected; retrying safely", {
             uid,
             requestId,
             lang,
+            attempt,
             finishReason,
             length: candidate.length,
+            discouraging: hasDiscouragingTone(candidate),
+            similar: isTooSimilar(candidate, recentFortunes),
           });
         }
       } catch (modelError) {
-        console.warn("AI adaptation unavailable; approved fallback selected", {
+        console.warn("Original AI generation unavailable; approved fallback selected", {
           uid,
           requestId,
           message: modelError?.message,
@@ -1649,7 +1704,7 @@ exports.generateFortune = onCall(
         await rememberAiFortune(
           uid,
           prediction,
-          selectedContent,
+          { ...selectedContent, recipe: selectedRecipe },
           recentFortunes,
           variantType,
         ).catch((error) => {
@@ -1671,6 +1726,15 @@ exports.generateFortune = onCall(
           reservation.persistHistory,
         ),
       );
+      console.info("Fortune generation completed", {
+        uid,
+        requestId,
+        lang,
+        category,
+        contentId: metadata.contentId,
+        variantType,
+        attempts: modelUsage.attempts,
+      });
       return {
         success: true,
         requestId,
@@ -1768,6 +1832,7 @@ function adminContentPayload(data = {}) {
   }
   if (
     UNSAFE_OUTPUT.test(text) ||
+    hasDiscouragingTone(text) ||
     SHARING_BAIT_OUTPUT.test(text) ||
     hasDirectiveStyle(text, lang) ||
     !isLikelyLanguage(text, lang)
@@ -1798,18 +1863,27 @@ exports.adminSeedFortuneContent = onCall(
   { cors: true, enforceAppCheck: false, timeoutSeconds: 60 },
   async (request) => {
     requireAdmin(request);
+    const refs = BUNDLED_FORTUNE_CONTENT.map((item) =>
+      db.doc(`fortune_content/${item.id}`),
+    );
+    const existingSnapshots = await db.getAll(...refs);
     const batch = db.batch();
-    for (const item of BUNDLED_FORTUNE_CONTENT) {
+    BUNDLED_FORTUNE_CONTENT.forEach((item, index) => {
+      const existing = existingSnapshots[index].data() || {};
+      const preservedStatus = ["approved", "draft", "rejected"].includes(existing.status)
+        ? existing.status
+        : item.status;
       batch.set(
-        db.doc(`fortune_content/${item.id}`),
+        refs[index],
         {
           ...item,
+          status: preservedStatus,
           seededAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },
       );
-    }
+    });
     await batch.commit();
     return { success: true, count: BUNDLED_FORTUNE_CONTENT.length };
   },
@@ -1939,7 +2013,7 @@ exports.adminGenerateFortuneDrafts = onCall(
     const locale = getFortuneLocale(lang);
     const existing = [
       ...BUNDLED_FORTUNE_CONTENT.filter((item) => item.lang === lang),
-      ...(await getApprovedCloudContent(lang)),
+      ...(await getCloudContent(lang)),
     ]
       .slice(0, 80)
       .map((item) => item.text);
@@ -1976,6 +2050,7 @@ Return only a JSON array of strings.`;
           text.length >= 15 &&
           text.length <= 80 &&
           !UNSAFE_OUTPUT.test(text) &&
+          !hasDiscouragingTone(text) &&
           !SHARING_BAIT_OUTPUT.test(text) &&
           !hasDirectiveStyle(text, lang) &&
           isLikelyLanguage(text, lang) &&

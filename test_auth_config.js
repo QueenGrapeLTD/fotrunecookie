@@ -262,12 +262,15 @@ test('profile actions remain above the native banner safe area', () => {
   assert.match(styles, /var\(--native-ad-banner-height, 50px\)/);
 });
 
-test('premium delivery starts from approved content with a safe AI adaptation fallback', () => {
+test('premium delivery creates original personalized AI content with an approved fallback', () => {
   assert.match(functionsSource, /selectApprovedContent\(\{/);
   assert.match(functionsSource, /let prediction = selectedContent\.text/);
   assert.match(functionsSource, /provider = "FortuneCookieAI-Curated"/);
   assert.match(functionsSource, /variantType = "approved-fallback"/);
-  assert.match(functionsSource, /variantType = "ai-adaptation"/);
+  assert.match(functionsSource, /variantType = "ai-original"/);
+  assert.match(functionsSource, /creativeVariationKey\(uid, requestId\)/);
+  assert.match(functionsSource, /attempt < 3/);
+  assert.match(functionsSource, /hasDiscouragingTone/);
 });
 
 test('all runtime Firebase clients are locked to the production project', () => {
