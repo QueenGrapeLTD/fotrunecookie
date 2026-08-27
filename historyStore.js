@@ -5,7 +5,8 @@ import { DEFAULT_PROFILE, normalizeProfile } from './profileSchema.js';
 
 const HISTORY_FILE = 'fortune_cookie_history_v1.json';
 const HISTORY_LOCAL_KEY = 'fortune_cookie_history_v2';
-const PROFILE_KEY = 'fortune_cookie_profile_v1';
+const LEGACY_PROFILE_KEY = 'fortune_cookie_profile_v1';
+const PROFILE_KEY_PREFIX = 'fortune_cookie_profile_v2';
 
 // Cache for history to prevent constant disk reads
 let historyCache = null;
@@ -206,25 +207,46 @@ export async function checkAnniversaryFortunes(ownerUid = null) {
 /**
  * PROFILE STORE (Uses Preferences for lightweight key-value storage)
  */
-export async function getProfile(fallbackLanguage = 'tr') {
+function profileStorageKey(ownerUid = null) {
+  const owner = String(ownerUid || 'device')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '')
+    .slice(0, 128) || 'device';
+  return `${PROFILE_KEY_PREFIX}:${owner}`;
+}
+
+export async function getProfile(fallbackLanguage = 'tr', ownerUid = null) {
   try {
-    const { value } = await Preferences.get({ key: PROFILE_KEY });
+    const key = profileStorageKey(ownerUid);
+    let { value } = await Preferences.get({ key });
+
+    // The old key contained device-wide data. It is safe to migrate only into
+    // the anonymous/device profile; copying it into a signed-in account could
+    // leak another account's name or birth details after an account switch.
+    if (!value && !ownerUid) {
+      const legacy = await Preferences.get({ key: LEGACY_PROFILE_KEY });
+      value = legacy.value;
+      if (value) {
+        await Preferences.set({ key, value });
+        await Preferences.remove({ key: LEGACY_PROFILE_KEY }).catch(() => {});
+      }
+    }
     return value
-      ? normalizeProfile(JSON.parse(value))
+      ? normalizeProfile(JSON.parse(value), fallbackLanguage)
       : normalizeProfile({ ...DEFAULT_PROFILE, preferredLanguage: fallbackLanguage }, fallbackLanguage);
   } catch (e) {
     return normalizeProfile({ ...DEFAULT_PROFILE, preferredLanguage: fallbackLanguage }, fallbackLanguage);
   }
 }
 
-export async function saveProfile(profileData) {
+export async function saveProfile(profileData, ownerUid = null) {
   try {
     const normalizedProfile = normalizeProfile(
       profileData,
       profileData?.preferredLanguage,
     );
     await Preferences.set({
-      key: PROFILE_KEY,
+      key: profileStorageKey(ownerUid),
       value: JSON.stringify(normalizedProfile)
     });
     return normalizedProfile;

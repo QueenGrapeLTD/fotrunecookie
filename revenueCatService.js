@@ -14,11 +14,20 @@ const API_KEYS = {
 };
 
 let isInitialized = false;
+let initializationPromise = null;
 let identifiedUserId = null;
+let identityQueue = Promise.resolve();
+
+function enqueueIdentityOperation(operation) {
+  const queued = identityQueue.catch(() => {}).then(operation);
+  identityQueue = queued.catch(() => {});
+  return queued;
+}
 
 export async function initRevenueCat() {
   if (isInitialized) return true;
   if (!Capacitor.isNativePlatform()) return false;
+  if (initializationPromise) return initializationPromise;
 
   const platform = Capacitor.getPlatform();
   const apiKey = API_KEYS[platform];
@@ -27,46 +36,58 @@ export async function initRevenueCat() {
     return false;
   }
 
-  try {
-    await Purchases.setLogLevel({
-      level: import.meta.env.DEV ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN,
-    });
-    await Purchases.configure({
-      apiKey,
-      appUserID: auth.currentUser?.uid || null,
-    });
-    isInitialized = true;
-    identifiedUserId = auth.currentUser?.uid || null;
-    return true;
-  } catch (error) {
-    console.warn("RevenueCat initialization failed:", error?.code);
-    return false;
-  }
+  initializationPromise = (async () => {
+    try {
+      await Purchases.setLogLevel({
+        level: import.meta.env.DEV ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN,
+      });
+      const configuredUid = auth.currentUser?.uid || null;
+      await Purchases.configure({
+        apiKey,
+        appUserID: configuredUid,
+      });
+      isInitialized = true;
+      identifiedUserId = configuredUid;
+      return true;
+    } catch (error) {
+      console.warn("RevenueCat initialization failed:", error?.code);
+      return false;
+    } finally {
+      if (!isInitialized) initializationPromise = null;
+    }
+  })();
+  return initializationPromise;
 }
 
 export async function identifyRevenueCatUser(uid) {
   if (!uid || !Capacitor.isNativePlatform()) return false;
   if (!isInitialized && !(await initRevenueCat())) return false;
-  if (identifiedUserId === uid) return true;
+  return enqueueIdentityOperation(async () => {
+    if (auth.currentUser?.uid !== uid) return false;
+    if (identifiedUserId === uid) return true;
 
-  try {
-    await Purchases.logIn({ appUserID: uid });
-    identifiedUserId = uid;
-    return true;
-  } catch (error) {
-    console.warn("RevenueCat user identification failed:", error?.code);
-    return false;
-  }
+    try {
+      await Purchases.logIn({ appUserID: uid });
+      if (auth.currentUser?.uid !== uid) return false;
+      identifiedUserId = uid;
+      return true;
+    } catch (error) {
+      console.warn("RevenueCat user identification failed:", error?.code);
+      return false;
+    }
+  });
 }
 
 export async function logoutRevenueCatUser() {
   if (!isInitialized || !Capacitor.isNativePlatform()) return;
-  try {
-    await Purchases.logOut();
-    identifiedUserId = null;
-  } catch (error) {
-    console.warn("RevenueCat logout failed:", error?.code);
-  }
+  return enqueueIdentityOperation(async () => {
+    try {
+      await Purchases.logOut();
+      identifiedUserId = null;
+    } catch (error) {
+      console.warn("RevenueCat logout failed:", error?.code);
+    }
+  });
 }
 
 export async function getRevenueCatOfferings() {

@@ -45,6 +45,7 @@ import {
   getAccountStateFromServer,
   getAppSettingsFromCloud,
   ensureFreemiumSession,
+  waitForInitialAuth,
   deleteMyAccountFromCloud,
   trackFortuneEvent
 } from './firebaseService.js';
@@ -103,6 +104,7 @@ let appSettings = {
   premiumDailyLimit: 5
 };
 let accountStateCache = null;
+let authUiVersion = 0;
 const isIOSPlatform = Capacitor.getPlatform() === 'ios';
 
 function getFortuneProfileForPlatform() {
@@ -227,6 +229,82 @@ function t(key, vars) {
   return translate(currentLang, key, vars);
 }
 
+function profileOwnerUid(user = auth.currentUser) {
+  return user && !user.isAnonymous ? user.uid : null;
+}
+
+function authContextKey(user = auth.currentUser) {
+  if (!user) return 'signed-out';
+  return `${user.isAnonymous ? 'anonymous' : 'account'}:${user.uid}`;
+}
+
+function isCurrentAuthContext(expectedKey) {
+  return authContextKey() === expectedKey;
+}
+
+function mergeCloudProfile(localProfile, cloudProfile) {
+  const merged = { ...localProfile };
+  const fields = {
+    displayName: 'name',
+    birthdate: 'birthdate',
+    birthtime: 'birthtime',
+    birthplace: 'birthplace',
+    birthCountry: 'birthCountry',
+    birthCity: 'birthCity',
+    birthRegion: 'birthRegion',
+    timezoneId: 'timezoneId',
+    risingSign: 'risingSign',
+    zodiac: 'zodiac',
+    latitude: 'latitude',
+    longitude: 'longitude',
+    timezoneOffset: 'timezoneOffset',
+    category: 'category',
+    categories: 'categories',
+    preferredLanguage: 'preferredLanguage',
+  };
+  if (cloudProfile && typeof cloudProfile === 'object') {
+    Object.entries(fields).forEach(([cloudKey, localKey]) => {
+      if (Object.prototype.hasOwnProperty.call(cloudProfile, cloudKey)) {
+        merged[localKey] = cloudProfile[cloudKey];
+      }
+    });
+  }
+  return normalizeProfile(merged, currentLang);
+}
+
+function renderProfileInputs(profile = userProfile) {
+  if (inputProfileName) inputProfileName.value = profile.name || '';
+  if (inputProfileBirthdate) inputProfileBirthdate.value = profile.birthdate || '';
+  if (inputProfileBirthtime) inputProfileBirthtime.value = profile.birthtime || '12:00';
+  if (inputBirthCountry) inputBirthCountry.value = profile.birthCountry || '';
+  if (inputBirthCity) inputBirthCity.value = profile.birthCity || '';
+  if (inputBirthRegion) inputBirthRegion.value = profile.birthRegion || '';
+  if (inputProfileLatitude) {
+    inputProfileLatitude.value = profile.latitude !== null && profile.latitude !== '' && Number.isFinite(Number(profile.latitude))
+      ? String(profile.latitude)
+      : '';
+  }
+  if (inputProfileLongitude) {
+    inputProfileLongitude.value = profile.longitude !== null && profile.longitude !== '' && Number.isFinite(Number(profile.longitude))
+      ? String(profile.longitude)
+      : '';
+  }
+  if (inputProfileTimezone) {
+    inputProfileTimezone.value = profile.timezoneOffset !== null && profile.timezoneOffset !== '' && Number.isFinite(Number(profile.timezoneOffset))
+      ? String(profile.timezoneOffset)
+      : '';
+  }
+  if (profile.birthplace && profile.timezoneId) {
+    const offset = Number(profile.timezoneOffset);
+    setLocationLookupStatus(
+      `✓ ${profile.birthplace} · ${profile.timezoneId}${Number.isFinite(offset) ? ` · UTC${offset >= 0 ? '+' : ''}${offset}` : ''}`,
+      'success',
+    );
+  } else {
+    setLocationLookupStatus('Ülke ve şehir girerek doğum yerini doğrulayın.');
+  }
+}
+
 let initialUserHydrationResolved = false;
 let resolveInitialUserHydration;
 const initialUserHydration = new Promise((resolve) => {
@@ -278,8 +356,14 @@ async function init() {
     );
 
     setBootstrapStatus(t('bootstrapSettings'));
+    const restoredUser = await settleWithTimeout(
+      waitForInitialAuth(),
+      1100,
+      'Firebase auth restore',
+      auth.currentUser,
+    );
     userProfile = await settleWithTimeout(
-      getProfile(currentLang),
+      getProfile(currentLang, profileOwnerUid(restoredUser)),
       800,
       'Profile',
       userProfile,
@@ -323,22 +407,7 @@ async function init() {
       document.documentElement.lang = currentLang;
     }
 
-    if (userProfile.name) inputProfileName.value = userProfile.name;
-    if (userProfile.birthdate) inputProfileBirthdate.value = userProfile.birthdate;
-    if (userProfile.birthtime) inputProfileBirthtime.value = userProfile.birthtime;
-    if (userProfile.birthCountry) inputBirthCountry.value = userProfile.birthCountry;
-    if (userProfile.birthCity) inputBirthCity.value = userProfile.birthCity;
-    if (userProfile.birthRegion) inputBirthRegion.value = userProfile.birthRegion;
-    if (userProfile.latitude !== null && Number.isFinite(Number(userProfile.latitude))) inputProfileLatitude.value = userProfile.latitude;
-    if (userProfile.longitude !== null && Number.isFinite(Number(userProfile.longitude))) inputProfileLongitude.value = userProfile.longitude;
-    if (userProfile.timezoneOffset !== null && Number.isFinite(Number(userProfile.timezoneOffset))) inputProfileTimezone.value = userProfile.timezoneOffset;
-    if (userProfile.birthplace && userProfile.timezoneId) {
-      const offset = Number(userProfile.timezoneOffset);
-      setLocationLookupStatus(
-        `✓ ${userProfile.birthplace} · ${userProfile.timezoneId}${Number.isFinite(offset) ? ` · UTC${offset >= 0 ? '+' : ''}${offset}` : ''}`,
-        'success',
-      );
-    }
+    renderProfileInputs(userProfile);
 
     if (selectLanguage) selectLanguage.value = currentLang;
     updateProfileBadge();
@@ -362,7 +431,9 @@ async function init() {
 
 async function updateAdStatusUI(forceRefresh = false) {
   const requestedLanguage = currentLang;
+  const requestedAuthContext = authContextKey();
   await adManager.refresh(forceRefresh);
+  if (!isCurrentAuthContext(requestedAuthContext)) return;
   const btnPremiumTop = document.getElementById('btn-premium-top');
   const btnWatchAdReward = document.getElementById('btn-watch-ad-reward');
   const premiumUsageCounter = document.getElementById('premium-usage-counter');
@@ -374,7 +445,10 @@ async function updateAdStatusUI(forceRefresh = false) {
   const paperSlipText = document.getElementById('paper-slip-text');
 
   const accountState = await getVerifiedAccountState(forceRefresh);
-  if (requestedLanguage !== currentLang) return;
+  if (
+    requestedLanguage !== currentLang ||
+    !isCurrentAuthContext(requestedAuthContext)
+  ) return;
   const isPremium =
     accountState?.isPremium === true ||
     accountState?.membershipTier === 'premium';
@@ -615,7 +689,7 @@ async function unlockAIRisingSign() {
     userProfile.timezoneOffset = Number(location.timezoneOffset);
     userProfile.risingSign = calculatedRising.id;
 
-    await saveProfile(userProfile);
+    await saveProfile(userProfile, profileOwnerUid());
 
     // Sync to Firestore Cloud DB if logged in
     const currentUser = auth.currentUser;
@@ -983,6 +1057,7 @@ async function incrementDailyCrackCount() {
 }
 
 async function getVerifiedAccountState(forceRefresh = false) {
+  const requestedAuthContext = authContextKey();
   if (!auth.currentUser) {
     accountStateCache = null;
     return {
@@ -998,8 +1073,17 @@ async function getVerifiedAccountState(forceRefresh = false) {
     };
   }
 
-  if (!forceRefresh && accountStateCache) return accountStateCache;
+  if (
+    !forceRefresh &&
+    accountStateCache &&
+    accountStateCache.ownerUid === auth.currentUser.uid
+  ) return accountStateCache;
   const serverState = await getAccountStateFromServer(forceRefresh);
+  if (!isCurrentAuthContext(requestedAuthContext)) return null;
+  if (
+    serverState?.ownerUid &&
+    serverState.ownerUid !== auth.currentUser?.uid
+  ) return null;
   if (serverState) {
     const serverLimits = serverState.limits || {};
     const freeDailyLimit = Number(serverLimits.freeDailyLimit);
@@ -1024,10 +1108,12 @@ async function getVerifiedAccountState(forceRefresh = false) {
   }
 
   const isPremium = await checkPremiumEntitlement();
+  if (!isCurrentAuthContext(requestedAuthContext)) return null;
   return {
     exists: true,
     isPremium,
     membershipTier: isPremium ? 'premium' : 'free',
+    ownerUid: auth.currentUser?.uid || null,
     premiumUsage: {
       used: Number(accountStateCache?.premiumUsage?.used) || 0,
       limit: Number(appSettings.premiumDailyLimit) || 5,
@@ -1504,7 +1590,7 @@ async function handleSaveProfile() {
   }
 
   try {
-    const savedProfile = await saveProfile(userProfile);
+    const savedProfile = await saveProfile(userProfile, profileOwnerUid());
     if (!savedProfile) throw new Error('local-profile-save-failed');
     userProfile = savedProfile;
 
@@ -1901,8 +1987,12 @@ function showToast(msg) {
 
 async function updateProfileMembershipStatus(forceRefresh = false) {
   const requestedLanguage = currentLang;
+  const requestedAuthContext = authContextKey();
   const accountState = await getVerifiedAccountState(forceRefresh);
-  if (requestedLanguage !== currentLang) return;
+  if (
+    requestedLanguage !== currentLang ||
+    !isCurrentAuthContext(requestedAuthContext)
+  ) return;
   const isPremium = accountState?.isPremium === true;
   const premiumLimit =
     Number(accountState?.premiumUsage?.limit) ||
@@ -2120,10 +2210,11 @@ function setupEventListeners() {
           throw new Error('account-delete-failed');
         }
         await clearHistory(uid);
-        userProfile = await saveProfile(normalizeProfile(
+        const clearedProfile = normalizeProfile(
           { ...DEFAULT_PROFILE, preferredLanguage: currentLang },
           currentLang,
-        ));
+        );
+        userProfile = await saveProfile(clearedProfile, uid) || clearedProfile;
         localStorage.removeItem('fc_crack_date');
         localStorage.removeItem('fc_crack_count');
         localStorage.removeItem('fc_last_anniversary_shown');
@@ -2150,21 +2241,7 @@ function setupEventListeners() {
         if (res.success && res.user) {
           showToast(`🎉 ${t('welcome', { name: res.user.displayName || t('userFallback') })}`);
           renderAuthenticatedAccount(res.user, { closeProfile: true });
-          if (res.user.displayName && !userProfile.name) {
-            userProfile.name = res.user.displayName;
-            if (inputProfileName) inputProfileName.value = res.user.displayName;
-          }
-
-          if (res.birthdate && !userProfile.birthdate) {
-            userProfile.birthdate = res.birthdate;
-            if (inputProfileBirthdate) inputProfileBirthdate.value = res.birthdate;
-            updateAstrologyCalculations();
-            showToast(`🎂 Doğum tarihi Google hesabından alındı: ${res.birthdate}`);
-          }
-
-          userProfile = await saveProfile(userProfile) || userProfile;
           accountStateCache = null;
-          updateProfileBadge();
         } else {
           showToast(`⚠️ ${t('signInFailed', { error: res.error || t('cancelled') })}`);
         }
@@ -2189,13 +2266,7 @@ function setupEventListeners() {
         if (res.success && res.user) {
           showToast(t('welcome', { name: res.user.displayName || t('userFallback') }));
           renderAuthenticatedAccount(res.user, { closeProfile: true });
-          if (res.user.displayName && !userProfile.name) {
-            userProfile.name = res.user.displayName;
-            if (inputProfileName) inputProfileName.value = res.user.displayName;
-          }
-          userProfile = await saveProfile(userProfile) || userProfile;
           accountStateCache = null;
-          updateProfileBadge();
         } else {
           showToast(t('signInFailed', { error: res.error || t('cancelled') }));
         }
@@ -2305,45 +2376,69 @@ function setupEventListeners() {
 
   if (btnLogoutUser) {
     btnLogoutUser.addEventListener('click', async () => {
-      await logoutRevenueCatUser();
-      await logoutUser();
-      accountStateCache = null;
-      
-      // Clear profile inputs and profile object
-      userProfile = normalizeProfile({
-        ...DEFAULT_PROFILE,
-        preferredLanguage: currentLang,
-      }, currentLang);
-      await saveProfile(userProfile);
-      if (inputProfileName) inputProfileName.value = '';
-      if (inputProfileBirthdate) inputProfileBirthdate.value = '';
-      if (inputProfileBirthtime) inputProfileBirthtime.value = '12:00';
-      if (inputBirthCountry) inputBirthCountry.value = '';
-      if (inputBirthCity) inputBirthCity.value = '';
-      if (inputBirthRegion) inputBirthRegion.value = '';
-      if (inputProfileLatitude) inputProfileLatitude.value = '';
-      if (inputProfileLongitude) inputProfileLongitude.value = '';
-      if (inputProfileTimezone) inputProfileTimezone.value = '';
-      setLocationLookupStatus('Ülke ve şehir girerek doğum yerini doğrulayın.');
-      updateProfileBadge();
-      updateAstrologyCalculations();
+      if (btnLogoutUser.disabled) return;
+      btnLogoutUser.disabled = true;
+      btnLogoutUser.setAttribute('aria-busy', 'true');
+      // Invalidate account-A hydration immediately, before either native SDK
+      // finishes its logout work.
+      authUiVersion += 1;
+      try {
+        await settleWithTimeout(
+          logoutRevenueCatUser(),
+          2500,
+          'RevenueCat logout',
+          null,
+        );
+        const result = await logoutUser();
+        if (!result.success) throw new Error(result.error || 'auth/logout-failed');
+        accountStateCache = null;
 
-      showToast('🚪 Hesaptan çıkış yapıldı');
-      if (authLoggedBox) authLoggedBox.classList.add('hidden');
-      if (authUnloggedBox) authUnloggedBox.classList.remove('hidden');
-      await updateProfileMembershipStatus();
-      await updateAdStatusUI();
+        userProfile = normalizeProfile({
+          ...DEFAULT_PROFILE,
+          preferredLanguage: currentLang,
+        }, currentLang);
+        await saveProfile(userProfile, null);
+        authUiVersion += 1;
+        renderProfileInputs(userProfile);
+        updateProfileBadge();
+        await updateAstrologyCalculations();
+
+        showToast('🚪 Hesaptan çıkış yapıldı');
+        if (authLoggedBox) authLoggedBox.classList.add('hidden');
+        if (authUnloggedBox) authUnloggedBox.classList.remove('hidden');
+        await Promise.all([
+          updateProfileMembershipStatus(),
+          updateAdStatusUI(),
+        ]);
+      } catch (error) {
+        console.error('Logout handler failed:', error);
+        showToast('Çıkış tamamlanamadı. Lütfen tekrar deneyin.');
+      } finally {
+        btnLogoutUser.disabled = false;
+        btnLogoutUser.removeAttribute('aria-busy');
+      }
     });
   }
 
   // Firebase Auth State Observer
   onAuthChange(async (user, syncedProfile) => {
+    const version = ++authUiVersion;
+    const expectedAuthContext = authContextKey(user);
+    const isCurrentHydration = () =>
+      version === authUiVersion && isCurrentAuthContext(expectedAuthContext);
+    accountStateCache = null;
+
     if (user?.isAnonymous) {
+      const localDeviceProfile = await getProfile(currentLang, null);
+      if (!isCurrentHydration()) return;
+      userProfile = localDeviceProfile;
+      renderProfileInputs(userProfile);
       accountStateCache = {
         exists: true,
         isPremium: false,
         membershipTier: 'free',
         premiumUsage: null,
+        ownerUid: user.uid,
         source: 'anonymous-freemium',
       };
       if (authLoggedBox) authLoggedBox.classList.add('hidden');
@@ -2351,6 +2446,7 @@ function setupEventListeners() {
       markInitialUserHydrationReady();
       updateProfileBadge();
       await updateAstrologyCalculations();
+      if (!isCurrentHydration()) return;
       void updateAdStatusUI().catch((error) => {
         console.warn('Anonymous account status refresh deferred:', error?.message);
       });
@@ -2358,6 +2454,28 @@ function setupEventListeners() {
     }
 
     if (user) {
+      const localAccountProfile = await getProfile(currentLang, user.uid);
+      if (!isCurrentHydration()) return;
+      userProfile = mergeCloudProfile(localAccountProfile, syncedProfile);
+      const profileLanguage = normalizeLanguage(
+        userProfile.preferredLanguage,
+        currentLang,
+      );
+      if (profileLanguage !== currentLang) {
+        currentLang = profileLanguage;
+        localStorage.setItem('app_language', currentLang);
+        document.documentElement.lang = currentLang;
+        if (selectLanguage) selectLanguage.value = currentLang;
+        updateLanguageUI();
+      }
+      renderProfileInputs(userProfile);
+      renderCategoryPills();
+      updateProfileBadge();
+      await updateAstrologyCalculations();
+      if (!isCurrentHydration()) return;
+      await saveProfile(userProfile, user.uid);
+      if (!isCurrentHydration()) return;
+
       const profileSaysPremium =
         syncedProfile?.isPremium === true ||
         syncedProfile?.membershipTier === 'premium';
@@ -2369,6 +2487,7 @@ function setupEventListeners() {
         await user.getIdToken(true).catch((error) => {
           console.warn('Auth claim refresh deferred:', error?.code);
         });
+        if (!isCurrentHydration()) return;
       }
       accountStateCache = profileSaysPremium
         ? {
@@ -2376,6 +2495,7 @@ function setupEventListeners() {
             isPremium: true,
             membershipTier: 'premium',
             premiumUsage: null,
+            ownerUid: user.uid,
             source: 'synced-profile',
           }
         : null;
@@ -2384,75 +2504,11 @@ function setupEventListeners() {
       renderAuthenticatedAccount(user);
       markInitialUserHydrationReady();
 
-      if (syncedProfile) {
-        if (syncedProfile.displayName) {
-          userProfile.name = syncedProfile.displayName;
-          if (inputProfileName) inputProfileName.value = syncedProfile.displayName;
-        }
-        if (syncedProfile.birthdate) {
-          userProfile.birthdate = syncedProfile.birthdate;
-          if (inputProfileBirthdate) inputProfileBirthdate.value = syncedProfile.birthdate;
-        }
-        if (syncedProfile.birthtime) {
-          userProfile.birthtime = syncedProfile.birthtime;
-          if (inputProfileBirthtime) inputProfileBirthtime.value = syncedProfile.birthtime;
-        }
-        if (syncedProfile.birthCountry) {
-          userProfile.birthCountry = syncedProfile.birthCountry;
-          if (inputBirthCountry) inputBirthCountry.value = syncedProfile.birthCountry;
-        }
-        if (syncedProfile.birthCity) {
-          userProfile.birthCity = syncedProfile.birthCity;
-          if (inputBirthCity) inputBirthCity.value = syncedProfile.birthCity;
-        }
-        if (syncedProfile.birthRegion) {
-          userProfile.birthRegion = syncedProfile.birthRegion;
-          if (inputBirthRegion) inputBirthRegion.value = syncedProfile.birthRegion;
-        }
-        if (syncedProfile.birthplace) userProfile.birthplace = syncedProfile.birthplace;
-        if (syncedProfile.timezoneId) userProfile.timezoneId = syncedProfile.timezoneId;
-        if (syncedProfile.latitude !== null && Number.isFinite(Number(syncedProfile.latitude))) {
-          userProfile.latitude = Number(syncedProfile.latitude);
-          if (inputProfileLatitude) inputProfileLatitude.value = syncedProfile.latitude;
-        }
-        if (syncedProfile.longitude !== null && Number.isFinite(Number(syncedProfile.longitude))) {
-          userProfile.longitude = Number(syncedProfile.longitude);
-          if (inputProfileLongitude) inputProfileLongitude.value = syncedProfile.longitude;
-        }
-        if (syncedProfile.timezoneOffset !== null && Number.isFinite(Number(syncedProfile.timezoneOffset))) {
-          userProfile.timezoneOffset = Number(syncedProfile.timezoneOffset);
-          if (inputProfileTimezone) inputProfileTimezone.value = syncedProfile.timezoneOffset;
-        }
-        if (syncedProfile.birthplace && syncedProfile.timezoneId) {
-          setLocationLookupStatus(
-            `✓ ${syncedProfile.birthplace} · ${syncedProfile.timezoneId}`,
-            'success',
-          );
-        }
-        if (syncedProfile.zodiac) userProfile.zodiac = syncedProfile.zodiac;
-        if (syncedProfile.category) {
-          userProfile.category = syncedProfile.category;
-          userProfile.categories = [syncedProfile.category];
-        }
-        if (syncedProfile.preferredLanguage) {
-          userProfile.preferredLanguage = syncedProfile.preferredLanguage;
-          currentLang = syncedProfile.preferredLanguage;
-          localStorage.setItem('app_language', currentLang);
-          if (selectLanguage) selectLanguage.value = currentLang;
-        }
-        if (syncedProfile.risingSign) {
-          userProfile.risingSign = syncedProfile.risingSign;
-          const selectProfileRising = document.getElementById('select-profile-rising');
-          if (selectProfileRising) selectProfileRising.value = syncedProfile.risingSign;
-        }
-        await saveProfile(userProfile);
-        renderCategoryPills();
-      }
-
       // A login can change provider, custom claims, RevenueCat identity and
       // manual admin entitlements at once. Never reuse a five-minute account
       // cache for this first authenticated hydration.
       const serverAccountState = await getAccountStateFromServer(true);
+      if (!isCurrentHydration()) return;
       const serverSaysPremium =
         serverAccountState?.isPremium === true ||
         serverAccountState?.membershipTier === 'premium';
@@ -2463,19 +2519,28 @@ function setupEventListeners() {
         isPremium,
         membershipTier: isPremium ? 'premium' : 'free',
         premiumUsage: serverAccountState?.premiumUsage || null,
+        ownerUid: user.uid,
       };
 
       // Kullanım kartını uzun sürebilen geçmiş indirme/yükleme işlemlerinden önce göster.
       await refreshAppUIState();
+      if (!isCurrentHydration()) return;
       // Store SDK identification is useful but must not hold the login screen.
       void identifyRevenueCatUser(user.uid).catch((error) => {
         console.warn('RevenueCat user identification deferred:', error?.message);
       });
       checkAndShowAnniversaryReminder();
     } else {
-      accountStateCache = null;
+      const localDeviceProfile = await getProfile(currentLang, null);
+      if (!isCurrentHydration()) return;
+      userProfile = localDeviceProfile;
+      renderProfileInputs(userProfile);
+      updateProfileBadge();
+      await updateAstrologyCalculations();
+      if (!isCurrentHydration()) return;
       if (authLoggedBox) authLoggedBox.classList.add('hidden');
       if (authUnloggedBox) authUnloggedBox.classList.remove('hidden');
+      markInitialUserHydrationReady();
     }
 
     // Signed-in and anonymous paths already refreshed above. Only the signed-out
@@ -2506,7 +2571,7 @@ function setupEventListeners() {
   if (selectProfileRising) {
     selectProfileRising.addEventListener('change', async (e) => {
       userProfile.risingSign = e.target.value;
-      await saveProfile(userProfile);
+      await saveProfile(userProfile, profileOwnerUid());
       const currentUser = auth.currentUser;
       if (currentUser) {
         await syncUserWithDatabase(currentUser, userProfile);

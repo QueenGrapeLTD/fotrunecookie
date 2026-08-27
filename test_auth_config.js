@@ -162,7 +162,8 @@ test('social users replace the local anonymous session without a persistence gat
 });
 
 test('anonymous bootstrap does not wait for remote account hydration', () => {
-  assert.match(mainSource, /getProfile\(currentLang\),\s*800/s);
+  assert.match(mainSource, /waitForInitialAuth\(\),\s*1100/s);
+  assert.match(mainSource, /getProfile\(currentLang, profileOwnerUid\(restoredUser\)\),\s*800/s);
   assert.match(mainSource, /ensureFreemiumSession\(\),\s*1200/s);
   assert.match(mainSource, /void settleWithTimeout\(\s*getAppSettingsFromCloud\(\)/s);
   assert.match(mainSource, /void settleWithTimeout\(\s*initialUserHydration/s);
@@ -262,15 +263,44 @@ test('profile actions remain above the native banner safe area', () => {
   assert.match(styles, /var\(--native-ad-banner-height, 50px\)/);
 });
 
-test('premium delivery creates original personalized AI content with an approved fallback', () => {
-  assert.match(functionsSource, /selectApprovedContent\(\{/);
-  assert.match(functionsSource, /let prediction = selectedContent\.text/);
-  assert.match(functionsSource, /provider = "FortuneCookieAI-Curated"/);
-  assert.match(functionsSource, /variantType = "approved-fallback"/);
-  assert.match(functionsSource, /variantType = "ai-original"/);
-  assert.match(functionsSource, /creativeVariationKey\(uid, requestId\)/);
-  assert.match(functionsSource, /attempt < 3/);
-  assert.match(functionsSource, /hasDiscouragingTone/);
+test('premium delivery requires original Vertex AI content and refunds provider failures', () => {
+  const generateFortuneSource = functionsSource.slice(
+    functionsSource.indexOf('exports.generateFortune = onCall'),
+    functionsSource.indexOf('const FORTUNE_EVENT_TYPES'),
+  );
+  assert.match(functionsSource, /vertexai: true/);
+  assert.match(functionsSource, /location: GEMINI_VERTEX_LOCATION/);
+  assert.match(functionsSource, /async function generateGeminiContent/);
+  assert.match(generateFortuneSource, /const variantType = "ai-original"/);
+  assert.match(generateFortuneSource, /creativeVariationKey\(uid, requestId\)/);
+  assert.match(generateFortuneSource, /attempt < 4/);
+  assert.match(generateFortuneSource, /hasDiscouragingTone/);
+  assert.match(generateFortuneSource, /hasHeavyNegativeFraming/);
+  assert.match(generateFortuneSource, /hasQuestionForm/);
+  assert.match(generateFortuneSource, /hasUpliftingTone/);
+  assert.match(generateFortuneSource, /bestSafeCandidate/);
+  assert.match(generateFortuneSource, /await releaseAiUsage\(uid, requestId, modelUsage\)/);
+  assert.match(generateFortuneSource, /"unavailable"/);
+  assert.doesNotMatch(generateFortuneSource, /approved-fallback/);
+  assert.doesNotMatch(generateFortuneSource, /selectedContent\.text/);
+});
+
+test('account switches isolate profile, account-state and ad-reward caches', () => {
+  const historySource = fs.readFileSync(
+    new URL('./historyStore.js', import.meta.url),
+    'utf8',
+  );
+  const adSource = fs.readFileSync(new URL('./adManager.js', import.meta.url), 'utf8');
+  assert.match(historySource, /PROFILE_KEY_PREFIX = 'fortune_cookie_profile_v2'/);
+  assert.match(historySource, /profileStorageKey\(ownerUid/);
+  assert.match(historySource, /if \(!value && !ownerUid\)/);
+  assert.match(authSource, /lastKnownAccountStateByUid = new Map\(\)/);
+  assert.match(authSource, /accountStateRetryAfterByUid = new Map\(\)/);
+  assert.match(authSource, /let authChangeVersion = 0/);
+  assert.match(mainSource, /let authUiVersion = 0/);
+  assert.match(mainSource, /isCurrentHydration/);
+  assert.match(adSource, /this\.refreshPromise\?\.uid === uid/);
+  assert.match(adSource, /auth\.currentUser\?\.uid === uid/);
 });
 
 test('all runtime Firebase clients are locked to the production project', () => {

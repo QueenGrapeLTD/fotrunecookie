@@ -130,8 +130,8 @@ export const db = initializeFirestore(app, {
   experimentalAutoDetectLongPolling: true,
 });
 export const functions = getFunctions(app, "us-central1");
-let accountStateRetryAfter = 0;
-let lastKnownAccountState = null;
+const accountStateRetryAfterByUid = new Map();
+const lastKnownAccountStateByUid = new Map();
 let anonymousSessionPromise = null;
 const userSyncPromises = new Map();
 const LOGIN_WRITE_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -423,6 +423,8 @@ export async function callGenerateFortuneCloudFunction(
       "unauthenticated",
       "functions/aborted",
       "aborted",
+      "functions/unavailable",
+      "unavailable",
     ]);
     if (terminalCodes.has(error?.code)) throw error;
     return null;
@@ -453,11 +455,17 @@ export async function getAccountStateFromServer(forceRefresh = false) {
 
   const uid = auth.currentUser.uid;
   const cacheKey = `account:${uid}`;
+  const getLastKnownState = () => lastKnownAccountStateByUid.get(uid) || null;
+  const rememberState = (state) => {
+    if (!state) return null;
+    const ownedState = { ...state, ownerUid: uid };
+    lastKnownAccountStateByUid.set(uid, ownedState);
+    return ownedState;
+  };
   if (!forceRefresh) {
     const cached = readLocalCache(cacheKey, ACCOUNT_STATE_CACHE_MS);
     if (cached) {
-      lastKnownAccountState = { ...cached, source: "local-cache" };
-      return lastKnownAccountState;
+      return rememberState({ ...cached, source: "local-cache" });
     }
   }
 
@@ -466,7 +474,7 @@ export async function getAccountStateFromServer(forceRefresh = false) {
 
   const getFirestoreFallback = async () => {
     try {
-      const snapshot = await getDoc(doc(db, "users", auth.currentUser.uid));
+      const snapshot = await getDoc(doc(db, "users", uid));
       const data = snapshot.data() || {};
       const isPremium =
         data.isPremium === true || data.membershipTier === "premium";
@@ -477,30 +485,33 @@ export async function getAccountStateFromServer(forceRefresh = false) {
         premiumUsage: null,
         source: "firestore-fallback",
       };
-      lastKnownAccountState = fallbackState;
-      writeLocalCache(cacheKey, fallbackState);
-      return fallbackState;
+      const ownedState = rememberState(fallbackState);
+      writeLocalCache(cacheKey, ownedState);
+      return ownedState;
     } catch (error) {
       console.warn("Firestore hesap durumu sorgulanamadı:", error?.code);
-      return lastKnownAccountState;
+      return getLastKnownState();
     }
   };
 
-  if (!callableEnabled || Date.now() < accountStateRetryAfter) {
-    return (await getFirestoreFallback()) || lastKnownAccountState;
+  if (
+    !callableEnabled ||
+    Date.now() < (accountStateRetryAfterByUid.get(uid) || 0)
+  ) {
+    return (await getFirestoreFallback()) || getLastKnownState();
   }
 
   try {
     const callable = httpsCallable(functions, "getAccountState");
     const result = await callable();
-    lastKnownAccountState = result?.data || null;
-    if (lastKnownAccountState) writeLocalCache(cacheKey, lastKnownAccountState);
-    accountStateRetryAfter = 0;
-    return lastKnownAccountState;
+    const accountState = rememberState(result?.data || null);
+    if (accountState) writeLocalCache(cacheKey, accountState);
+    accountStateRetryAfterByUid.delete(uid);
+    return accountState;
   } catch (error) {
     console.warn("Hesap durumu sorgulanamadı:", error?.code);
-    accountStateRetryAfter = Date.now() + 60_000;
-    return (await getFirestoreFallback()) || lastKnownAccountState;
+    accountStateRetryAfterByUid.set(uid, Date.now() + 60_000);
+    return (await getFirestoreFallback()) || getLastKnownState();
   }
 }
 
@@ -852,11 +863,19 @@ export async function resetEmailPassword(email) {
 export async function logoutUser() {
   try {
     if (isNativeMobileAuthRuntime()) {
-      await FirebaseAuthentication.signOut().catch((error) => {
+      await runAuthOperation(
+        FirebaseAuthentication.signOut(),
+        3000,
+        "auth/native-logout-timeout",
+      ).catch((error) => {
         console.warn("Native logout failed:", error?.code || error?.message);
       });
     }
-    await firebaseSignOut(auth);
+    await runAuthOperation(
+      firebaseSignOut(auth),
+      5000,
+      "auth/web-logout-timeout",
+    );
     return { success: true };
   } catch (error) {
     console.error("Logout error:", error?.code);
@@ -1139,27 +1158,37 @@ export async function clearCloudFortuneHistory() {
 }
 
 export function onAuthChange(callback) {
+  let authChangeVersion = 0;
   return onAuthStateChanged(auth, async (user) => {
+    const version = ++authChangeVersion;
+    const isCurrentChange = () =>
+      version === authChangeVersion &&
+      (auth.currentUser?.uid || null) === (user?.uid || null);
     if (!user) {
-      callback(null, null);
+      if (isCurrentChange()) callback(null, null);
       return;
     }
     if (user.isAnonymous) {
-      callback(user, null);
+      if (isCurrentChange()) callback(user, null);
       return;
     }
     let timeoutId;
     const syncTimedOut = Symbol("auth-profile-sync-timeout");
+    const profileSync = syncUserWithDatabase(user);
     const syncedProfile = await Promise.race([
-      syncUserWithDatabase(user),
+      profileSync,
       new Promise((resolve) => {
         timeoutId = setTimeout(() => resolve(syncTimedOut), 1800);
       }),
     ]);
     clearTimeout(timeoutId);
+    if (!isCurrentChange()) return;
     if (syncedProfile === syncTimedOut) {
       console.warn("Auth profile hydration timed out; rendering the signed-in user immediately.");
       callback(user, null);
+      void profileSync.then((lateProfile) => {
+        if (lateProfile && isCurrentChange()) callback(user, lateProfile);
+      });
       return;
     }
     callback(user, syncedProfile);

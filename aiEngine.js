@@ -223,6 +223,8 @@ export async function fetchRemoteAIPrediction(profile = {}, lang = 'tr', options
       'unauthenticated',
       'functions/aborted',
       'aborted',
+      'functions/unavailable',
+      'unavailable',
     ]);
     if (terminalCodes.has(error?.code)) throw error;
   }
