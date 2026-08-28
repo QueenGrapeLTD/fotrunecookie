@@ -33,12 +33,6 @@ import {
   setDoc,
   getDoc,
   getDocFromServer,
-  collection,
-  getDocs,
-  deleteDoc,
-  query,
-  orderBy,
-  limit,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { normalizeProfile } from "./profileSchema.js";
@@ -72,7 +66,7 @@ const app = initializeApp(firebaseConfig);
 
 const appCheckSiteKey = import.meta.env.VITE_RECAPTCHA_V3_SITE_KEY;
 const appCheckEnabled = import.meta.env.VITE_APP_CHECK_ENABLED === "true";
-if (appCheckEnabled && appCheckSiteKey) {
+if (appCheckEnabled) {
   if (Capacitor.isNativePlatform()) {
     const nativeAppCheckReady = FirebaseAppCheck.initialize({
       isTokenAutoRefreshEnabled: true,
@@ -98,7 +92,7 @@ if (appCheckEnabled && appCheckSiteKey) {
       }),
       isTokenAutoRefreshEnabled: true,
     });
-  } else {
+  } else if (appCheckSiteKey) {
     if (import.meta.env.DEV) {
       globalThis.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
     }
@@ -106,9 +100,7 @@ if (appCheckEnabled && appCheckSiteKey) {
       provider: new ReCaptchaV3Provider(appCheckSiteKey),
       isTokenAutoRefreshEnabled: true,
     });
-  }
-} else if (appCheckEnabled) {
-  if (import.meta.env.PROD && !appCheckSiteKey) {
+  } else if (import.meta.env.PROD) {
     console.error(
       "Firebase App Check anahtarı eksik. Korumalı Cloud Function çağrıları kapalı kalacaktır.",
     );
@@ -239,6 +231,15 @@ export async function ensureFreemiumSession() {
 
 function cleanString(value, maxLength = 160) {
   return String(value || "").trim().slice(0, maxLength);
+}
+
+function sanitizeFortuneName(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{M}\s.'’-]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 32);
 }
 
 function hasOwn(object, key) {
@@ -389,6 +390,7 @@ export async function callGenerateFortuneCloudFunction(
     const callable = httpsCallable(functions, "generateFortune");
     const result = await callable({
       profile: {
+        name: sanitizeFortuneName(profile.name),
         zodiac: cleanString(profile.zodiac, 20),
         risingSign: cleanString(profile.risingSign, 20),
         category: cleanString(profile.category || "general", 20),
@@ -596,23 +598,6 @@ function isNativeMobileAuthRuntime() {
     (hasNativeBridge || isAndroidWebView || isIOSWebView);
 }
 
-function isRetryableGoogleNetworkError(error) {
-  const failureText = `${error?.code || ""} ${error?.message || ""}`;
-  return (
-    /(?:^|\s)(?:err(?:or)?\s*)?-?7(?:\s|$)/i.test(failureText) ||
-    /network[_\s-]?(?:error|request[_\s-]?failed)/i.test(failureText)
-  );
-}
-
-function isCancelledGoogleSignIn(error) {
-  const failureText = `${error?.code || ""} ${error?.message || ""}`;
-  return /cancel(?:ed|led|lation)?/i.test(failureText);
-}
-
-function waitForAuthRetry(delayMs) {
-  return new Promise((resolve) => setTimeout(resolve, delayMs));
-}
-
 async function runAuthOperation(operation, timeoutMs, errorCode) {
   let timeoutId;
   try {
@@ -632,39 +617,9 @@ async function runAuthOperation(operation, timeoutMs, errorCode) {
 }
 
 async function requestNativeGoogleCredential() {
-  let credentialManagerError = null;
-
-  // Google Play services status 7 is a retryable network failure. Retry the
-  // modern Credential Manager flow once instead of immediately falling back
-  // to legacy Google Sign-In, whose extra access-token request makes the same
-  // transient network problem more likely to fail again.
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      return await FirebaseAuthentication.signInWithGoogle({
-        useCredentialManager: true,
-        skipNativeAuth: true,
-      });
-    } catch (error) {
-      credentialManagerError = error;
-      if (isCancelledGoogleSignIn(error)) throw error;
-      if (!isRetryableGoogleNetworkError(error)) break;
-      if (attempt === 0) await waitForAuthRetry(900);
-    }
-  }
-
-  if (isRetryableGoogleNetworkError(credentialManagerError)) {
-    const networkError = new Error(
-      "Google oturum açma servisine ulaşılamadı. Bağlantınızı kontrol edip yeniden deneyin.",
-    );
-    networkError.code = "auth/network-request-failed";
-    throw networkError;
-  }
-
-  console.warn(
-    "Google Credential Manager compatibility failure; trying legacy Google Sign-In:",
-    credentialManagerError?.code,
-    credentialManagerError?.message,
-  );
+  // Credential Manager can crash Google Play services before the bridge gets a
+  // callback (observed as TransactionTooLargeException on Android 16). The
+  // plugin's supported compatibility path uses the legacy Google Sign-In API.
   return FirebaseAuthentication.signInWithGoogle({
     useCredentialManager: false,
     skipNativeAuth: true,
@@ -680,11 +635,9 @@ async function signInNatively(provider) {
       "auth/apple-provider-timeout",
     );
   } else {
-    // Credential Manager returns the Google ID token directly. The legacy
-    // GoogleSignIn path also requests a separate OAuth access token after the
-    // account picker; that second request can fail on physical/Play-installed
-    // devices even though account selection itself succeeded. Keep the legacy
-    // flow only as a compatibility fallback for older Android environments.
+    // On affected Android devices Credential Manager dies inside Google Play
+    // services and never returns an error to JavaScript, so an in-app timeout
+    // cannot recover. Use the plugin's supported legacy compatibility path.
     nativeResult = await runAuthOperation(
       requestNativeGoogleCredential(),
       45000,
@@ -895,16 +848,17 @@ function isRecentLoginWrite(value) {
     Date.now() - timestamp < LOGIN_WRITE_INTERVAL_MS;
 }
 
-export async function syncUserWithDatabase(user, profileData = {}) {
+export async function syncUserWithDatabase(user, profileData = {}, options = {}) {
   if (!user || user.isAnonymous) return null;
   const hasProfileUpdates = hasExplicitProfileUpdates(profileData);
-  const syncKey = `${user.uid}:${hasProfileUpdates ? "profile" : "login"}`;
+  const forceFresh = options?.forceFresh === true;
+  const syncKey = `${user.uid}:${hasProfileUpdates ? "profile" : forceFresh ? "fresh-login" : "login"}`;
   if (userSyncPromises.has(syncKey)) return userSyncPromises.get(syncKey);
 
   const syncPromise = (async () => {
     const userRef = doc(db, "users", user.uid);
     try {
-      const cachedProfile = !hasProfileUpdates
+      const cachedProfile = !hasProfileUpdates && !forceFresh
         ? readLocalCache(
             `profile:${user.uid}`,
             PROFILE_CACHE_MS,
@@ -1010,9 +964,10 @@ function validTimestamp(value) {
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
 
-export async function syncFortuneToCloud(fortuneItem) {
+export async function syncFortuneToCloud(fortuneItem, expectedOwnerUid = "") {
   const user = auth.currentUser;
   if (!user || user.isAnonymous) return false;
+  if (expectedOwnerUid && user.uid !== expectedOwnerUid) return false;
 
   try {
     const payload = {
@@ -1033,6 +988,19 @@ export async function syncFortuneToCloud(fortuneItem) {
       variantType: cleanString(fortuneItem?.variantType, 32),
       requestId: cleanString(fortuneItem?.requestId, 128),
     };
+    if (
+      hasOwn(fortuneItem || {}, "reflection") ||
+      hasOwn(fortuneItem || {}, "reaction") ||
+      hasOwn(fortuneItem || {}, "reflectedAt")
+    ) {
+      payload.reflection = cleanString(fortuneItem?.reflection, 500);
+      payload.reaction = ["keep", "act", "release"].includes(fortuneItem?.reaction)
+        ? fortuneItem.reaction
+        : "";
+      payload.reflectedAt = validTimestamp(
+        fortuneItem?.reflectedAt || new Date().toISOString(),
+      );
+    }
     if (!payload.quote) return false;
     const fortuneRef = doc(
       db,
@@ -1085,45 +1053,22 @@ export async function getCloudFortuneHistory(maxItems = 100) {
   const user = auth.currentUser;
   if (!user || user.isAnonymous) return [];
 
-  let directItems = [];
-  try {
-    const historyQuery = query(
-      collection(db, "users", user.uid, "fortunes"),
-      orderBy("timestamp", "desc"),
-      limit(Math.min(Math.max(Number(maxItems) || 100, 1), 200)),
-    );
-    const snapshot = await getDocs(historyQuery);
-    directItems = snapshot.docs.map((item) => ({
-      id: item.id,
-      cloudId: item.id,
-      ...item.data(),
-      ownerUid: user.uid,
-    }));
-  } catch (error) {
-    console.warn("Cloud fortune history unavailable:", error?.code);
-  }
-
-  let serverItems = [];
   try {
     const callable = httpsCallable(functions, "getMyFortuneHistory");
     const result = await callable();
-    serverItems = (Array.isArray(result?.data?.items) ? result.data.items : []).map(
-      (item) => ({ ...item, ownerUid: user.uid }),
-    );
+    return (Array.isArray(result?.data?.items) ? result.data.items : [])
+      .slice(0, Math.min(Math.max(Number(maxItems) || 100, 1), 200))
+      .map((item) => ({
+        ...item,
+        id: item.requestId || item.id,
+        cloudId: item.requestId || item.id,
+        ownerUid: user.uid,
+        cloudPersisted: true,
+      }));
   } catch (error) {
-    console.warn("Server AI history unavailable:", error?.code);
+    console.warn("Cloud fortune history unavailable:", error?.code);
+    return [];
   }
-
-  const seen = new Set();
-  return [...directItems, ...serverItems]
-    .filter((item) => {
-      const key = `${cleanString(item?.quote || item?.text, 360)}|${validTimestamp(item?.timestamp)}`;
-      if (!item?.quote || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))
-    .slice(0, Math.min(Math.max(Number(maxItems) || 100, 1), 200));
 }
 
 export async function syncFortuneHistoryToCloud(history = []) {
@@ -1132,7 +1077,9 @@ export async function syncFortuneHistoryToCloud(history = []) {
     auth.currentUser.isAnonymous ||
     !Array.isArray(history)
   ) return false;
-  const items = history.slice(0, 100);
+  const items = history
+    .filter((item) => item?.cloudPersisted === true)
+    .slice(0, 100);
   const results = await Promise.allSettled(
     items.map((item) => syncFortuneToCloud(item)),
   );
@@ -1146,11 +1093,9 @@ export async function clearCloudFortuneHistory() {
   if (!user || user.isAnonymous) return false;
 
   try {
-    const snapshot = await getDocs(
-      collection(db, "users", user.uid, "fortunes"),
-    );
-    await Promise.all(snapshot.docs.map((item) => deleteDoc(item.ref)));
-    return true;
+    const callable = httpsCallable(functions, "clearMyFortuneHistory");
+    const result = await callable();
+    return result?.data?.success === true;
   } catch (error) {
     console.warn("Bulut fal geçmişi temizlenemedi:", error?.code);
     return false;
@@ -1174,7 +1119,9 @@ export function onAuthChange(callback) {
     }
     let timeoutId;
     const syncTimedOut = Symbol("auth-profile-sync-timeout");
-    const profileSync = syncUserWithDatabase(user);
+    // Initial auth hydration must observe the current server profile instead of
+    // reusing the 15-minute convenience cache from an earlier app session.
+    const profileSync = syncUserWithDatabase(user, {}, { forceFresh: true });
     const syncedProfile = await Promise.race([
       profileSync,
       new Promise((resolve) => {
@@ -1185,9 +1132,13 @@ export function onAuthChange(callback) {
     if (!isCurrentChange()) return;
     if (syncedProfile === syncTimedOut) {
       console.warn("Auth profile hydration timed out; rendering the signed-in user immediately.");
-      callback(user, null);
+      // The UI may render local account details, but fortune generation must
+      // remain gated until the force-fresh profile attempt settles.
+      callback(user, null, { profileHydrationPending: true });
       void profileSync.then((lateProfile) => {
-        if (lateProfile && isCurrentChange()) callback(user, lateProfile);
+        if (isCurrentChange()) {
+          callback(user, lateProfile, { profileHydrationPending: false });
+        }
       });
       return;
     }

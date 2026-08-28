@@ -9,7 +9,7 @@ export const fortunesDatabase = {
       "Sıradan görünen bir an, yakında güzel bir anlam kazanacak.",
       "Aradığın cevap, hiç beklemediğin kadar tanıdık bir yerde.",
       "Bugünün küçük tesadüfü, yarının sevilen hikâyesi olabilir.",
-      "İçini ısıtan bir haber, sessizce sana doğru yol alıyor."
+      "Sana ulaşan içten bir haber, günün en güzel sürprizine dönüşebilir."
     ],
     "love": [
       "Kalbinde yarım kalan bir cümle, sıcak bir karşılık bulabilir.",
@@ -18,7 +18,7 @@ export const fortunesDatabase = {
       "İki insan arasındaki en güzel yakınlık, rahatça susabilmektir."
     ],
     "career": [
-      "Emeğinin sessiz kısmı, doğru kişi tarafından fark edilmek üzere.",
+      "Emeğindeki özgün ayrıntı, doğru kişinin dikkatini çekmeye hazırlanıyor.",
       "Gözden kaçan bir fikir, masadaki en değerli şeye dönüşebilir.",
       "Küçük bir ayrıntı, üzerinde çalıştığın işin yönünü değiştirecek.",
       "Yeteneğin, beklemediğin bir konuşmada kendine yer açabilir."
@@ -93,7 +93,7 @@ export const fortunesDatabase = {
       "Un sentiment inachevé pourrait bientôt trouver une réponse chaleureuse.",
       "La personne qui te comprend remarque aussi tes silences.",
       "Un sourire familier pourrait bientôt prendre un nouveau sens.",
-      "La plus belle proximité se sent aussi dans le silence."
+      "Un geste sincère peut rendre une belle proximité encore plus chaleureuse."
     ],
     "career": [
       "La partie discrète de ton travail sera bientôt remarquée.",

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import test from 'node:test';
+import { fortunesDatabase } from './fortunesData.js';
 
 const require = createRequire(import.meta.url);
 const {
@@ -34,6 +35,16 @@ test('every curated message fits the story card contract', () => {
     assert.equal(item.status, 'approved');
     assert.equal(item.qualityScore, 5);
   }
+});
+
+test('client fortune data exactly matches the authoritative bundled source', () => {
+  const expected = {};
+  for (const item of BUNDLED_FORTUNE_CONTENT) {
+    expected[item.lang] ||= {};
+    expected[item.lang][item.category] ||= [];
+    expected[item.lang][item.category].push(item.text);
+  }
+  assert.deepEqual(fortunesDatabase, expected);
 });
 
 test('recent content is cooled down during selection', () => {

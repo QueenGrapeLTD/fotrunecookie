@@ -6,13 +6,10 @@ const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
 const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('./style.css', import.meta.url), 'utf8');
 
-test('reflection ritual provides reactions, private note and journal save action', () => {
-  assert.match(html, /id="reflection-ritual"/);
-  assert.match(html, /data-reaction="keep"/);
-  assert.match(html, /data-reaction="act"/);
-  assert.match(html, /data-reaction="release"/);
-  assert.match(html, /id="reflection-note"[^>]+maxlength="500"/);
-  assert.match(main, /updateFortuneInHistory/);
+test('unintended reflection journal is absent from the result flow', () => {
+  assert.doesNotMatch(html, /reflection-ritual|reflection-note|btn-save-reflection/);
+  assert.doesNotMatch(main, /saveCurrentReflection|updateFortuneInHistory|reflection_saved/);
+  assert.doesNotMatch(css, /\.reflection-ritual|\.reflection-reaction|#reflection-note/);
 });
 
 test('iOS experience removes astrology surfaces from the primary journey', () => {
@@ -22,8 +19,9 @@ test('iOS experience removes astrology surfaces from the primary journey', () =>
   assert.match(css, /html\.platform-ios #zodiac-active-badge/);
 });
 
-test('journal view exposes lasting-value summary metrics', () => {
-  assert.match(html, /id="journey-total"/);
-  assert.match(html, /id="journey-reflections"/);
-  assert.match(html, /id="journey-streak"/);
+test('history remains available without reflection journey surfaces', () => {
+  assert.match(html, /id="history-title-text"/);
+  assert.match(html, /id="history-list-container"/);
+  assert.doesNotMatch(html, /journey-summary|journey-reflections|My Reflection Journey/);
+  assert.match(main, /texts\.historyTitle/);
 });

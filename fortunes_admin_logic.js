@@ -63,10 +63,6 @@ function configurePage() {
   addText.maxLength = 80;
   addText.placeholder = '15-80 karakterlik doğal ve merak uyandıran bir mesaj';
 
-  const apiKey = document.getElementById('ai-api-key');
-  const provider = document.getElementById('ai-provider');
-  if (apiKey?.closest('.form-group')) apiKey.closest('.form-group').remove();
-  if (provider?.closest('.form-group')) provider.closest('.form-group').remove();
   if (aiCount) {
     [...aiCount.options].forEach((option) => {
       if (Number(option.value) > 10) option.remove();

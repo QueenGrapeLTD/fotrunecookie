@@ -1,16 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import quality from './functions/fortuneQuality.js';
+import {
+  hasExactlyOnePersonalName as clientHasExactlyOnePersonalName,
+  hasFrighteningOutcome as clientHasFrighteningOutcome,
+  hasInvalidFortuneToken as clientHasInvalidFortuneToken,
+} from './languageGuard.js';
 
 const {
   hasDiscouragingTone,
+  hasExactlyOnePersonalName,
+  hasFrighteningOutcome,
   hasHeavyNegativeFraming,
+  hasInvalidFortuneToken,
   hasQuestionForm,
   hasStaleMysticCliche,
   hasUpliftingTone,
   isTooSimilar,
   motifSignature,
 } = quality;
+
+function assertClientServerResult(clientCheck, serverCheck, value, expected, label) {
+  assert.equal(clientCheck, expected, `client: ${label || value}`);
+  assert.equal(serverCheck, expected, `server: ${label || value}`);
+}
 
 test('repetitive Scorpio imagery is rejected even when wording changes', () => {
   const recent = [
@@ -109,5 +122,99 @@ test('motif detection groups semantic cliches', () => {
   assert.deepEqual(
     new Set(motifs),
     new Set(['darkness', 'silence', 'patience', 'mountain', 'light']),
+  );
+});
+
+test('named fortunes require the exact sanitized name once while name-free fortunes stay valid', () => {
+  const validNamed = 'IŞIK, güzel bir fırsat bugün sana sıcak bir güven getiriyor.';
+  const missingName = 'Güzel bir fırsat bugün sana sıcak bir güven getiriyor.';
+  const duplicateName = 'Işık, güzel bir fırsat IŞIK için sıcak bir güven getiriyor.';
+
+  for (const [text, expected, label] of [
+    [validNamed, true, 'single case-folded Unicode name'],
+    [missingName, false, 'missing name'],
+    [duplicateName, false, 'duplicate name'],
+  ]) {
+    assertClientServerResult(
+      clientHasExactlyOnePersonalName(text, 'Işık', 'tr'),
+      hasExactlyOnePersonalName(text, 'Işık', 'tr'),
+      text,
+      expected,
+      label,
+    );
+  }
+
+  const nameFree = 'Güzel bir fırsat bugün sıcak bir güven getiriyor.';
+  assertClientServerResult(
+    clientHasExactlyOnePersonalName(nameFree, '', 'tr'),
+    hasExactlyOnePersonalName(nameFree, '', 'tr'),
+    nameFree,
+    true,
+    'name-free fortune',
+  );
+  assert.equal(hasExactlyOnePersonalName('Adana güzel bir sürpriz taşıyor.', 'Ada', 'tr'), false);
+});
+
+test('literal invalid values and unresolved name placeholders are rejected in parity', () => {
+  const invalid = [
+    'Ada, bugün null bir sürpriz getiriyor.',
+    'Ada, bugün undefined bir sürpriz getiriyor.',
+    'Ada, bugün NaN kadar güzel bir fırsat getiriyor.',
+    'Bugün {{name}} için güzel bir fırsat doğuyor.',
+    'Bugün ${name} için güzel bir fırsat doğuyor.',
+    'Bugün <name> için güzel bir fırsat doğuyor.',
+    'Bugün [name] için güzel bir fırsat doğuyor.',
+    'Bugün __USER_NAME__ için güzel bir fırsat doğuyor.',
+  ];
+  for (const text of invalid) {
+    assertClientServerResult(
+      clientHasInvalidFortuneToken(text),
+      hasInvalidFortuneToken(text),
+      text,
+      true,
+    );
+  }
+
+  const ordinary = 'Ada, bugün [küçük bir an] güzel bir fırsata dönüşebilir.';
+  assertClientServerResult(
+    clientHasInvalidFortuneToken(ordinary),
+    hasInvalidFortuneToken(ordinary),
+    ordinary,
+    false,
+    'ordinary bracketed prose',
+  );
+});
+
+test('frightening accident and mortal-injury outcomes are rejected in all ten languages', () => {
+  const unsafe = {
+    tr: 'Ada, yaklaşan kaza ölümcül bir yaralanma getirecek.',
+    en: 'Ada, a fatal crash and collision will cause death.',
+    de: 'Ada, ein tödlicher Unfall endet mit schwerer Verletzung.',
+    fr: 'Ada, un accident mortel causera une collision et une blessure.',
+    es: 'Ada, un accidente fatal causará una colisión y una herida.',
+    it: 'Ada, un incidente mortale porterà a uno schianto e una ferita.',
+    el: 'Ada, ένα θανατηφόρο ατύχημα θα φέρει σύγκρουση και τραυματισμό.',
+    ko: 'Ada, 치명적인 교통사고와 충돌로 중상을 입습니다.',
+    ja: 'Ada、致命的な交通事故と衝突で重傷になります。',
+    zh: 'Ada，致命车祸和碰撞会造成重伤。',
+  };
+
+  for (const [language, text] of Object.entries(unsafe)) {
+    assertClientServerResult(
+      clientHasFrighteningOutcome(text, language),
+      hasFrighteningOutcome(text, language),
+      text,
+      true,
+      language,
+    );
+  }
+
+  const safe = 'Ada, güzel bir tesadüf bugün sıcak bir gülümsemeye dönüşebilir.';
+  assertClientServerResult(
+    clientHasFrighteningOutcome(safe, 'tr'),
+    hasFrighteningOutcome(safe, 'tr'),
+    safe,
+    false,
+    'positive non-fatalistic fortune',
   );
 });

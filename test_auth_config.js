@@ -61,11 +61,8 @@ test('native Google and Apple providers bridge into Firebase Auth', () => {
   assert.match(authSource, /auth\/apple-provider-timeout/);
   assert.match(authSource, /auth\/google-provider-timeout/);
   assert.match(authSource, /auth\/\$\{provider\}-web-session-timeout/);
-  assert.match(authSource, /useCredentialManager:\s*true/);
-  assert.match(authSource, /isRetryableGoogleNetworkError/);
-  assert.match(authSource, /attempt < 2/);
-  assert.match(authSource, /auth\/network-request-failed/);
-  assert.match(authSource, /Credential Manager compatibility failure; trying legacy Google Sign-In/);
+  assert.doesNotMatch(authSource, /useCredentialManager:\s*true/);
+  assert.doesNotMatch(authSource, /isRetryableGoogleNetworkError/);
   assert.match(authSource, /useCredentialManager:\s*false/);
   assert.match(authSource, /skipNativeAuth:\s*true/);
   assert.match(authSource, /preserveNativeAppleDisplayName/);
@@ -229,8 +226,9 @@ test('anonymous users remain local except for expiring reward security ledgers',
   assert.match(mainSource, /accountStateCache\?\.isPremium === true/);
   assert.match(functionsSource, /isAnonymousRequest\(request\)/);
   assert.match(functionsSource, /reason: "anonymous-local-only"/);
-  assert.match(functionsSource, /persistHistory: isPremium/);
-  assert.match(functionsSource, /if \(persistHistory\)/);
+  assert.match(functionsSource, /persistNoveltyHistory: true/);
+  assert.match(functionsSource, /persistUserHistory: isPremium/);
+  assert.match(functionsSource, /if \(persistUserHistory\)/);
   assert.match(functionsSource, /anonymousAuthCount: anonymousAuthUids\.size/);
   assert.match(functionsSource, /expireAt: expiresAfter\(REQUEST_RETENTION_MS\)/);
   assert.match(functionsSource, /expireAt: expiresAfter\(AD_TRANSACTION_RETENTION_MS\)/);
