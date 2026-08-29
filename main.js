@@ -609,8 +609,8 @@ async function updateAdStatusUI(forceRefresh = false) {
     accountState?.isPremium === true ||
     accountState?.membershipTier === 'premium';
   document.documentElement.classList.toggle('premium-experience', isPremium);
-  if (isPremium && cookieTapCount === 0 && !isAnimating) {
-    updatePremiumLandingStage('idle');
+  if (cookieTapCount === 0 && !isAnimating) {
+    updateCookieLandingStage('idle');
   }
   if (accountState) void adManager.syncDisplayAds({ isPremium });
   const premiumLimit =
@@ -640,8 +640,11 @@ async function updateAdStatusUI(forceRefresh = false) {
     // 1. Header Premium Button turns Green
     if (btnPremiumTop) {
       btnPremiumTop.classList.add('premium-active-green');
+      btnPremiumTop.setAttribute('aria-pressed', 'true');
+      btnPremiumTop.setAttribute('aria-label', t('premiumEnabled'));
+      btnPremiumTop.title = t('premiumEnabled');
       const labelText = document.getElementById('premium-top-label-text');
-      if (labelText) labelText.textContent = 'Premium';
+      if (labelText) labelText.textContent = 'Premium ✓';
     }
 
     // 2. Hide Watch Ad Button completely for Premium users!
@@ -672,6 +675,9 @@ async function updateAdStatusUI(forceRefresh = false) {
     const progress = adManager.getAdProgress();
     if (btnPremiumTop) {
       btnPremiumTop.classList.remove('premium-active-green');
+      btnPremiumTop.setAttribute('aria-pressed', 'false');
+      btnPremiumTop.setAttribute('aria-label', t('premiumNavAria'));
+      btnPremiumTop.title = t('premiumNavAria');
       const labelText = document.getElementById('premium-top-label-text');
       if (labelText) labelText.textContent = 'Premium';
     }
@@ -1312,7 +1318,7 @@ function startReadingSequence(isAiModeActive) {
   };
 
   hideToast();
-  updatePremiumLandingStage('opening');
+  updateCookieLandingStage('opening');
   showMessage();
   if (badge) badge.classList.remove('hidden');
   if (paperSlipText) paperSlipText.textContent = `✨ ${t('preparingFortune').replace(/…$/, '').toLocaleUpperCase(currentLang)}`;
@@ -1431,8 +1437,7 @@ async function renderFortuneResult(
   recordFortuneEvent('result_view');
 }
 
-function updatePremiumLandingStage(stage = 'idle') {
-  if (!document.documentElement.classList.contains('premium-experience')) return;
+function updateCookieLandingStage(stage = 'idle') {
   const texts = uiText[currentLang] || uiText.en;
   const badge = document.getElementById('ai-fortune-loading-badge');
   const primary = document.getElementById('ai-loading-primary');
@@ -1471,7 +1476,7 @@ function resetCookieTapProgress() {
     'cookie-tap-impact',
   );
   cookieInteractive.setAttribute('aria-label', t('cookieAria'));
-  updatePremiumLandingStage('idle');
+  updateCookieLandingStage('idle');
 }
 
 async function crackCookie() {
@@ -1912,7 +1917,7 @@ function updateLanguageUI() {
   if (appTitleText) appTitleText.textContent = t('appTitle');
   if (subtitleText) subtitleText.textContent = texts.subtitle;
   if (pillText) pillText.textContent = texts.pillText;
-  updatePremiumLandingStage(stateLanding.dataset.cookieStage || 'idle');
+  updateCookieLandingStage(stateLanding.dataset.cookieStage || 'idle');
 
   const paperSlipText = document.getElementById('paper-slip-text');
   if (paperSlipText) paperSlipText.textContent = t('paperText');
@@ -1968,7 +1973,12 @@ function updateLanguageUI() {
 
   // Top & Landing Action Buttons Translations
   const premiumTopLabelText = document.getElementById('premium-top-label-text');
-  if (premiumTopLabelText) premiumTopLabelText.textContent = texts.premiumTopLabel || 'Premium';
+  if (premiumTopLabelText) {
+    const premiumLabel = texts.premiumTopLabel || 'Premium';
+    premiumTopLabelText.textContent = document.documentElement.classList.contains('premium-experience')
+      ? `${premiumLabel} ✓`
+      : premiumLabel;
+  }
 
   const btnWatchAdMainText = document.getElementById('btn-watch-ad-main-text');
   if (btnWatchAdMainText) {
@@ -2325,34 +2335,22 @@ function setupEventListeners() {
     if (cookieTapCount === 1) {
       cookieInteractive.classList.add('crack-stage-1');
       cookieInteractive.setAttribute('aria-label', t('firstCrack'));
-      if (document.documentElement.classList.contains('premium-experience')) {
-        hideToast();
-        updatePremiumLandingStage('first');
-      } else {
-        showToast(t('firstCrack'));
-      }
+      hideToast();
+      updateCookieLandingStage('first');
       return;
     }
     if (cookieTapCount === 2) {
       cookieInteractive.classList.add('crack-stage-2');
       cookieInteractive.setAttribute('aria-label', t('secondCrack'));
-      if (document.documentElement.classList.contains('premium-experience')) {
-        hideToast();
-        updatePremiumLandingStage('second');
-      } else {
-        showToast(t('secondCrack'));
-      }
+      hideToast();
+      updateCookieLandingStage('second');
       return;
     }
 
     cookieTapCount = 0;
     cookieInteractive.setAttribute('aria-label', t('preparingFortune'));
-    if (document.documentElement.classList.contains('premium-experience')) {
-      hideToast();
-      updatePremiumLandingStage('opening');
-    } else {
-      showToast(`✨ ${t('preparingFortune')}`);
-    }
+    hideToast();
+    updateCookieLandingStage('opening');
     void crackCookie();
   };
 
