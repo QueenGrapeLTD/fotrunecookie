@@ -5,6 +5,8 @@ const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const {
+  AFFIRMATIVE_STYLE_RULES,
+  UPLIFTING_CUE_PROMPTS,
   hasDiscouragingTone,
   hasExactlyOnePersonalName,
   hasFrighteningOutcome,
@@ -15,6 +17,10 @@ const {
   hasUpliftingTone,
   isTooSimilar,
 } = require("./fortuneQuality");
+const {
+  requestFortuneJudgment,
+  selectApprovedFortune,
+} = require("./fortuneJudge");
 const { isLikelyLanguage } = require("./fortuneLanguage");
 const { getFortuneLocale } = require("./fortuneLocales");
 const {
@@ -55,18 +61,6 @@ const APPROVED_CONTENT_CACHE_MS = 10 * 60 * 1000;
 const SUPPORTED_FORTUNE_LANGUAGES = [
   "tr", "en", "de", "fr", "es", "it", "el", "zh", "ja", "ko",
 ];
-const UPLIFTING_CUE_PROMPTS = {
-  tr: "şans, uğur, umut, fırsat, sevinç, neşe, güzel, gülümseme, ferahlık, keyif, sıcaklık, yakınlık, cesaret, güven or sürpriz",
-  en: "luck, hope, opportunity, joy, welcome, beautiful, smile, relief, delight, warmth, confidence, pleasant or good",
-  de: "Glück, Hoffnung, Chance, Freude, schön, Lächeln, Wärme, Zuversicht, Erleichterung or willkommen",
-  fr: "chance, espoir, joie, heureux, beau, belle, sourire, chaleureux, confiance, soulagement, agréable or surprise",
-  es: "suerte, esperanza, oportunidad, alegría, feliz, bonito, hermoso, sonrisa, cálido, confianza, alivio, agradable or sorpresa",
-  it: "fortuna, speranza, opportunità, gioia, felice, bello, sorriso, caldo, fiducia, sollievo, piacevole or sorpresa",
-  el: "τύχη, ελπίδα, ευκαιρία, χαρά, όμορφο, χαμόγελο, ζεστό, εμπιστοσύνη, ανακούφιση or έκπληξη",
-  zh: "幸运、好运、希望、机会、喜悦、开心、美好、温暖、惊喜、安心或幸福",
-  ja: "幸運、幸せ、希望、機会、嬉しい、喜び、素敵、温かい、チャンス、安心、笑顔または楽しい",
-  ko: "행운, 행복, 희망, 기회, 기쁨, 좋은, 따뜻한, 안심, 미소, 즐거운 또는 반가운",
-};
 let geminiProvidersCache = null;
 
 function getGeminiProviders() {
@@ -416,6 +410,7 @@ function isValidAdaptation(prediction, lang, localeConfig, recentFortunes, name 
     !hasHeavyNegativeFraming(prediction) &&
     !hasQuestionForm(prediction) &&
     !hasStaleMysticCliche(prediction) &&
+    hasUpliftingTone(prediction, lang, name) &&
     isLikelyLanguage(prediction, lang) &&
     !hasDirectiveStyle(prediction, lang) &&
     !SHARING_BAIT_OUTPUT.test(prediction) &&
@@ -648,10 +643,12 @@ STRICT RULES
 15. Never include hashtags, social-media slang, engagement bait, marketing language, calls to action or phrases such as "send this", "share this", "tag someone", "save this" or "if you needed a sign".
 16. Silently verify language, locale naturalness, character limit, safety, coherence, novelty and standalone shareability before returning the answer.
 17. The final emotional aftertaste must be unmistakably lucky, uplifting, warmly surprising or quietly confidence-building. Naturally include at least one word (an inflected form is fine) from this locale-specific positive family: ${UPLIFTING_CUE_PROMPTS[lang] || UPLIFTING_CUE_PROMPTS.en}.
-18. Do not build the message around stale mystical imagery such as depths, darkness, silence, whispers, waiting, patience, rocks, mountains, peaks or storms.
+18. Do not build the message around stale mystical delay or advice to wait patiently. A concrete welcome surprise may naturally await the reader nearby when that action fits the locale; avoid depths, darkness, silence, whispers, rocks, mountains, peaks or storms.
 19. Never end on loss, loneliness, inadequacy, fear, regret, delay or helplessness.
 20. Use an affirmative statement, never a question. Start from the welcome possibility itself; do not mention a burden, worry, fear, pain, loneliness, pressure, failure or other gloomy premise before resolving it.
-${retry ? "21. The previous attempt failed validation. Follow the new recipe and change the subject, form, rhythm and vocabulary completely." : ""}`;
+21. ${AFFIRMATIVE_STYLE_RULES[lang] || AFFIRMATIVE_STYLE_RULES.en}
+22. Describe a concrete, hopeful welcome development in the near future with a playful or warmly surprising tone and natural active wording for the locale; do not force a predetermined verb.
+${retry ? "23. The previous attempt failed validation. Follow the new recipe and change the subject, form, rhythm and vocabulary completely." : ""}`;
 }
 
 function requireAuth(request) {
@@ -1704,6 +1701,7 @@ exports.generateFortune = onCall(
     const modelUsage = {
       model: GEMINI_MODEL,
       attempts: 0,
+      judgeAttempts: 0,
       promptTokens: 0,
       outputTokens: 0,
       thoughtTokens: 0,
@@ -1729,7 +1727,6 @@ exports.generateFortune = onCall(
       let providerSource = "";
       const variantType = "ai-original";
       let selectedRecipe = {};
-      let bestSafeCandidate = null;
       const attemptedRecipes = [];
       const localDate = localDateForTimeZone(profile.timezoneId);
       const personalizationKey = creativeVariationKey(uid, requestId);
@@ -1738,93 +1735,122 @@ exports.generateFortune = onCall(
       // providers are unavailable or every candidate fails the quality guard,
       // the outer catch releases the reserved entitlement instead of silently
       // presenting a generic database entry as personalized AI.
-      for (let attempt = 0; attempt < 4; attempt += 1) {
-        const recipe = pickFortuneRecipe(
-          [...recentFortunes, ...attemptedRecipes],
-          attempt,
-        );
-        const currentRecipe = recipeIds(recipe);
-        attemptedRecipes.unshift({ recipe: currentRecipe });
-        const prompt = buildLocalizedFortunePrompt({
-          name,
-          zodiac,
-          rising,
-          category,
-          lang,
-          recipe,
-          recentFortunes,
-          retry: attempt > 0,
-          localDate,
-          personalizationKey,
-        });
-        const generated = await generateGeminiContent(
-          {
-            model: GEMINI_MODEL,
-            contents: prompt,
-            config: {
-              maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
-              thinkingConfig: {
-                thinkingLevel: ThinkingLevel.MINIMAL,
+      const approvedFortune = await selectApprovedFortune({
+        attempts: 4,
+        createCandidate: async (attempt) => {
+          const recipe = pickFortuneRecipe(
+            [...recentFortunes, ...attemptedRecipes],
+            attempt,
+          );
+          const currentRecipe = recipeIds(recipe);
+          attemptedRecipes.unshift({ recipe: currentRecipe });
+          const prompt = buildLocalizedFortunePrompt({
+            name,
+            zodiac,
+            rising,
+            category,
+            lang,
+            recipe,
+            recentFortunes,
+            retry: attempt > 0,
+            localDate,
+            personalizationKey,
+          });
+          const generated = await generateGeminiContent(
+            {
+              model: GEMINI_MODEL,
+              contents: prompt,
+              config: {
+                maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
+                thinkingConfig: {
+                  thinkingLevel: ThinkingLevel.MINIMAL,
+                },
               },
             },
-          },
-          { uid, requestId, attempt, operation: "personalized-fortune" },
-        );
-        const result = generated.result;
-        const responseUsage = result.usageMetadata || {};
-        modelUsage.attempts += 1;
-        modelUsage.promptTokens += Number(responseUsage.promptTokenCount) || 0;
-        modelUsage.outputTokens += Number(responseUsage.candidatesTokenCount) || 0;
-        modelUsage.thoughtTokens += Number(responseUsage.thoughtsTokenCount) || 0;
-        modelUsage.totalTokens += Number(responseUsage.totalTokenCount) || 0;
+            { uid, requestId, attempt, operation: "personalized-fortune" },
+          );
+          const result = generated.result;
+          const responseUsage = result.usageMetadata || {};
+          modelUsage.attempts += 1;
+          modelUsage.promptTokens += Number(responseUsage.promptTokenCount) || 0;
+          modelUsage.outputTokens += Number(responseUsage.candidatesTokenCount) || 0;
+          modelUsage.thoughtTokens += Number(responseUsage.thoughtsTokenCount) || 0;
+          modelUsage.totalTokens += Number(responseUsage.totalTokenCount) || 0;
 
-        const candidate = String(result.text || "")
-          .trim()
-          .replace(/^["'«»“”]+|["'«»“”]+$/g, "");
-        const finishReason = result.candidates?.[0]?.finishReason || "";
-        const validCandidate =
-          finishReason !== "MAX_TOKENS" &&
-          isValidAdaptation(candidate, lang, localeConfig, recentFortunes, name);
-        if (validCandidate) {
-          const candidateResult = {
-            prediction: candidate,
-            provider: generated.provider,
-            providerSource: generated.source,
-            recipe: currentRecipe,
+          return {
+            candidate: String(result.text || "")
+              .trim()
+              .replace(/^["'«»“”]+|["'«»“”]+$/g, ""),
+            finishReason: result.candidates?.[0]?.finishReason || "",
+            generated,
+            currentRecipe,
           };
-          // Prefer an explicit positive cue, but do not turn a semantically
-          // safe, affirmative message into a 503 merely because it uses a
-          // positive synonym that is absent from the locale lexicon.
-          if (hasUpliftingTone(candidate, lang)) {
-            ({ prediction, provider, providerSource } = candidateResult);
-            selectedRecipe = candidateResult.recipe;
-            break;
-          }
-          bestSafeCandidate ||= candidateResult;
-          continue;
-        }
-        console.warn("Original AI fortune rejected; retrying safely", {
-          uid,
-          requestId,
-          lang,
+        },
+        isLocallyValid: ({ candidate, finishReason }) =>
+          finishReason !== "MAX_TOKENS" &&
+          isValidAdaptation(candidate, lang, localeConfig, recentFortunes, name),
+        judgeCandidate: async ({ candidate }, attempt) => {
+          modelUsage.judgeAttempts += 1;
+          const judged = await requestFortuneJudgment({
+            generateContent: generateGeminiContent,
+            model: GEMINI_MODEL,
+            thinkingLevel: ThinkingLevel.MINIMAL,
+            candidate,
+            lang,
+            locale: localeConfig.locale,
+            expectedName: name,
+            logContext: {
+              uid,
+              requestId,
+              attempt,
+              operation: "fortune-quality-judge",
+            },
+          });
+          const judgeUsage = judged.generated.result?.usageMetadata || {};
+          modelUsage.promptTokens += Number(judgeUsage.promptTokenCount) || 0;
+          modelUsage.outputTokens += Number(judgeUsage.candidatesTokenCount) || 0;
+          modelUsage.thoughtTokens += Number(judgeUsage.thoughtsTokenCount) || 0;
+          modelUsage.totalTokens += Number(judgeUsage.totalTokenCount) || 0;
+          return judged;
+        },
+        onRejected: ({
+          phase,
           attempt,
-          finishReason,
-          length: candidate.length,
-          expectedNamePresentOnce: hasExactlyOnePersonalName(candidate, name, lang),
-          frighteningOutcome: hasFrighteningOutcome(candidate, lang),
-          invalidToken: hasInvalidFortuneToken(candidate),
-          discouraging: hasDiscouragingTone(candidate),
-          heavyNegativeFraming: hasHeavyNegativeFraming(candidate),
-          questionForm: hasQuestionForm(candidate),
-          staleMysticCliche: hasStaleMysticCliche(candidate),
-          uplifting: hasUpliftingTone(candidate, lang),
-          similar: isTooSimilar(candidate, recentFortunes),
-        });
-      }
+          candidateResult,
+          judgment,
+          error,
+        }) => {
+          const candidate = candidateResult.candidate;
+          console.warn("Original AI fortune rejected; retrying safely", {
+            uid,
+            requestId,
+            lang,
+            attempt,
+            phase,
+            reasonCode: judgment?.reasonCode || null,
+            judgeError: error
+              ? String(error?.message || "quality judge error").slice(0, 300)
+              : null,
+            finishReason: candidateResult.finishReason,
+            length: candidate.length,
+            expectedNamePresentOnce: hasExactlyOnePersonalName(candidate, name, lang),
+            frighteningOutcome: hasFrighteningOutcome(candidate, lang),
+            invalidToken: hasInvalidFortuneToken(candidate),
+            discouraging: hasDiscouragingTone(candidate),
+            heavyNegativeFraming: hasHeavyNegativeFraming(candidate),
+            questionForm: hasQuestionForm(candidate),
+            staleMysticCliche: hasStaleMysticCliche(candidate),
+            uplifting: hasUpliftingTone(candidate, lang, name),
+            similar: isTooSimilar(candidate, recentFortunes),
+          });
+        },
+      });
 
-      if (!prediction && bestSafeCandidate) {
-        ({ prediction, provider, providerSource } = bestSafeCandidate);
-        selectedRecipe = bestSafeCandidate.recipe;
+      if (approvedFortune) {
+        prediction = approvedFortune.candidate;
+        provider = approvedFortune.generated.provider;
+        providerSource = approvedFortune.generated.source;
+        selectedRecipe = approvedFortune.currentRecipe;
       }
 
       if (!prediction) {

@@ -1,6 +1,6 @@
 # Fortune Engine
 
-Status: Repository-verified baseline as of 2026-08-28.
+Status: Repository-verified baseline as of 2026-08-29.
 
 ## Final displayed-text path
 
@@ -29,6 +29,7 @@ The name can be prepended locally. Zodiac and rising sign do not influence curat
 -> `buildLocalizedFortunePrompt`
 -> Gemini provider loop
 -> server validation
+-> independent structured Gemini quality judgment
 -> completion/history writes
 -> client safety/language validation
 -> `main.js:renderFortuneResult`
@@ -57,6 +58,10 @@ The wire request omits raw birth date/time, birthplace, country/city/region, coo
 - Resolved: Latin-language guards reject marker-free English for non-English Latin locales; ten-language fixtures and the curated library are tested.
 - Resolved: `fortunesData.js` has exact 160-message parity with its declared source.
 - Resolved: client/server validators reject unresolved placeholders and frightening accident/death terms across all ten languages.
+- Resolved: the active AI validator requires a locale-specific uplifting cue and rejects explicit grammatical negation in all ten languages. This intentionally rejects even positive double-negative idioms: the prompt asks for direct affirmative wording, four retries remain available, and exhausted attempts use the existing observable refund path. Prompt cue/style rules and the validator contract are owned by `functions/fortuneQuality.js`; no failed candidate is delivered through a weaker "best safe" bypass.
+- Resolved: Turkish negative-aorist scanning excludes only the already-sanitized exact personal-name token, so surnames such as Yılmaz remain usable while negative verbs in the message body are still rejected. Locale-specific "impossible" outcomes remain discouraging in all ten languages.
+- Resolved: semantic quality is no longer inferred from an open-ended action-verb regex list. A candidate must first pass deterministic length, language, name, placeholder, safety, affirmative-tone, directive, sharing-bait and novelty gates. Only then `functions/fortuneJudge.js` sends the candidate, language/locale and optional sanitized expected name to a separate low-temperature Gemini judgment call. The strict two-field JSON result is never displayed; only an explicit `approved` decision may be delivered.
+- Resolved: malformed judgment JSON, a judgment-provider error, or any semantic rejection rejects that candidate and consumes another one of the existing four generation attempts. Exhaustion follows the existing observable entitlement release plus `unavailable` response; it never returns a rejected candidate, judge text, cached substitute or local/legacy fortune. The judge receives no birth or location data.
 - Remaining P2/P3: inactive legacy generator, orphan prompt helper, dormant optional fallback, and legacy local content override remain until decommissioning tests approve removal.
 
 ## Target authority

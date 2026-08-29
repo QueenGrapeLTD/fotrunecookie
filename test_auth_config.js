@@ -271,12 +271,14 @@ test('premium delivery requires original Vertex AI content and refunds provider 
   assert.match(functionsSource, /async function generateGeminiContent/);
   assert.match(generateFortuneSource, /const variantType = "ai-original"/);
   assert.match(generateFortuneSource, /creativeVariationKey\(uid, requestId\)/);
-  assert.match(generateFortuneSource, /attempt < 4/);
+  assert.match(generateFortuneSource, /selectApprovedFortune/);
+  assert.match(generateFortuneSource, /attempts: 4/);
+  assert.match(generateFortuneSource, /requestFortuneJudgment/);
   assert.match(generateFortuneSource, /hasDiscouragingTone/);
   assert.match(generateFortuneSource, /hasHeavyNegativeFraming/);
   assert.match(generateFortuneSource, /hasQuestionForm/);
   assert.match(generateFortuneSource, /hasUpliftingTone/);
-  assert.match(generateFortuneSource, /bestSafeCandidate/);
+  assert.doesNotMatch(generateFortuneSource, /bestSafeCandidate/);
   assert.match(generateFortuneSource, /await releaseAiUsage\(uid, requestId, modelUsage\)/);
   assert.match(generateFortuneSource, /"unavailable"/);
   assert.doesNotMatch(generateFortuneSource, /approved-fallback/);

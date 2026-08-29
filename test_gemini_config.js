@@ -14,6 +14,10 @@ const clientSource = fs.readFileSync(
   new URL("./firebaseService.js", import.meta.url),
   "utf8",
 );
+const judgeSource = fs.readFileSync(
+  new URL("./functions/fortuneJudge.js", import.meta.url),
+  "utf8",
+);
 
 function loadUnaryFunction(functionSource, name) {
   const match = functionSource.match(
@@ -27,6 +31,10 @@ test("fortune generation uses the cost-controlled Gemini model", () => {
   assert.match(source, /gemini-3\.1-flash-lite/);
   assert.match(source, /ThinkingLevel\.MINIMAL/);
   assert.match(source, /GEMINI_MAX_OUTPUT_TOKENS = 220/);
+  assert.match(judgeSource, /maxOutputTokens: 48/);
+  assert.match(judgeSource, /temperature: 0/);
+  assert.match(judgeSource, /responseMimeType: "application\/json"/);
+  assert.match(judgeSource, /responseJsonSchema: FORTUNE_JUDGE_RESPONSE_SCHEMA/);
 });
 
 test("Gemini usage and token-ceiling failures are observable", () => {
@@ -47,6 +55,11 @@ test("fortune prompt is locale-aware and fits the story-card message area", () =
   assert.match(source, /hardCardLimit = 80/);
   assert.match(source, /Do not automatically use Japanese motifs/);
   assert.match(source, /one universal everyday image/);
+  assert.match(source, /UPLIFTING_CUE_PROMPTS,/);
+  assert.match(source, /UPLIFTING_CUE_PROMPTS\[lang\] \|\| UPLIFTING_CUE_PROMPTS\.en/);
+  assert.match(source, /AFFIRMATIVE_STYLE_RULES,/);
+  assert.match(source, /AFFIRMATIVE_STYLE_RULES\[lang\] \|\| AFFIRMATIVE_STYLE_RULES\.en/);
+  assert.match(source, /do not force a predetermined verb/);
   assert.match(clientSource, /name:\s*sanitizeFortuneName\(profile\.name\)/);
   assert.doesNotMatch(clientSource, /birthdate:\s*cleanString\(profile\.birthdate/);
 });
@@ -94,6 +107,32 @@ test("server and client delivery gates enforce names, placeholders and frighteni
   assert.match(aiEngineSource, /hasExactlyOnePersonalName\(text, expectedName, lang\)/);
   assert.match(aiEngineSource, /hasInvalidFortuneToken\(text\)/);
   assert.match(aiEngineSource, /hasFrighteningOutcome\(text, lang\)/);
+});
+
+test("active AI validation retries rather than delivering a non-uplifting candidate", () => {
+  const validatorSource = source.slice(
+    source.indexOf("function isValidAdaptation"),
+    source.indexOf("function recipeUsageScore"),
+  );
+  const generateFortuneSource = source.slice(
+    source.indexOf("exports.generateFortune = onCall"),
+    source.indexOf("const FORTUNE_EVENT_TYPES"),
+  );
+
+  assert.match(validatorSource, /hasUpliftingTone\(prediction, lang, name\)/);
+  assert.match(generateFortuneSource, /selectApprovedFortune/);
+  assert.match(generateFortuneSource, /attempts: 4/);
+  assert.match(generateFortuneSource, /requestFortuneJudgment/);
+  assert.ok(
+    generateFortuneSource.indexOf("isLocallyValid") <
+      generateFortuneSource.indexOf("judgeCandidate"),
+    "the semantic judge must run only after local gates",
+  );
+  assert.doesNotMatch(generateFortuneSource, /bestSafeCandidate/);
+  assert.match(generateFortuneSource, /if \(!prediction\) \{/);
+  assert.match(generateFortuneSource, /Gemini did not return a safe, original fortune/);
+  assert.match(generateFortuneSource, /await releaseAiUsage\(uid, requestId, modelUsage\)/);
+  assert.match(generateFortuneSource, /new HttpsError\(\s*"unavailable"/);
 });
 
 test("rewarded and premium AI share private novelty history", () => {
