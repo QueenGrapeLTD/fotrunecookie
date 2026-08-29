@@ -202,6 +202,8 @@ const historyListContainer = document.getElementById('history-list-container');
 
 // Result Card DOM
 const cardTitleText = document.getElementById('card-title-text');
+const resultSubtitleText = document.getElementById('result-subtitle-text');
+const resultMessageLabel = document.getElementById('result-message-label');
 const fortuneQuoteText = document.getElementById('fortune-quote-text');
 const luckyTitleText = document.getElementById('lucky-title-text');
 const luckyNumbersContainer = document.getElementById('lucky-numbers-container');
@@ -606,6 +608,10 @@ async function updateAdStatusUI(forceRefresh = false) {
   const isPremium =
     accountState?.isPremium === true ||
     accountState?.membershipTier === 'premium';
+  document.documentElement.classList.toggle('premium-experience', isPremium);
+  if (isPremium && cookieTapCount === 0 && !isAnimating) {
+    updatePremiumLandingStage('idle');
+  }
   if (accountState) void adManager.syncDisplayAds({ isPremium });
   const premiumLimit =
     Number(accountState?.premiumUsage?.limit) ||
@@ -1306,6 +1312,7 @@ function startReadingSequence(isAiModeActive) {
   };
 
   hideToast();
+  updatePremiumLandingStage('opening');
   showMessage();
   if (badge) badge.classList.remove('hidden');
   if (paperSlipText) paperSlipText.textContent = `✨ ${t('preparingFortune').replace(/…$/, '').toLocaleUpperCase(currentLang)}`;
@@ -1424,6 +1431,38 @@ async function renderFortuneResult(
   recordFortuneEvent('result_view');
 }
 
+function updatePremiumLandingStage(stage = 'idle') {
+  if (!document.documentElement.classList.contains('premium-experience')) return;
+  const texts = uiText[currentLang] || uiText.en;
+  const badge = document.getElementById('ai-fortune-loading-badge');
+  const primary = document.getElementById('ai-loading-primary');
+  const secondary = document.getElementById('ai-loading-secondary');
+  stateLanding.dataset.cookieStage = stage;
+
+  if (stage === 'opening') {
+    if (pillText) pillText.textContent = t('magicAppearing');
+    if (subtitleText) subtitleText.textContent = t('loadingOpened');
+    if (primary) primary.textContent = t('loadingOpened');
+    if (secondary) secondary.textContent = t('loadingReading');
+    if (badge) badge.classList.remove('hidden');
+    return;
+  }
+  if (badge) badge.classList.add('hidden');
+  if (stage === 'second') {
+    if (pillText) pillText.textContent = t('lastTouch');
+    if (subtitleText) subtitleText.textContent = t('secondCrack');
+    return;
+  }
+  if (stage === 'first') {
+    if (pillText) pillText.textContent = texts.pillText;
+    if (subtitleText) subtitleText.textContent = t('firstCrack');
+    return;
+  }
+
+  if (pillText) pillText.textContent = texts.pillText;
+  if (subtitleText) subtitleText.textContent = t('cookieAria');
+}
+
 function resetCookieTapProgress() {
   cookieTapCount = 0;
   cookieInteractive.classList.remove(
@@ -1432,6 +1471,7 @@ function resetCookieTapProgress() {
     'cookie-tap-impact',
   );
   cookieInteractive.setAttribute('aria-label', t('cookieAria'));
+  updatePremiumLandingStage('idle');
 }
 
 async function crackCookie() {
@@ -1872,12 +1912,15 @@ function updateLanguageUI() {
   if (appTitleText) appTitleText.textContent = t('appTitle');
   if (subtitleText) subtitleText.textContent = texts.subtitle;
   if (pillText) pillText.textContent = texts.pillText;
+  updatePremiumLandingStage(stateLanding.dataset.cookieStage || 'idle');
 
   const paperSlipText = document.getElementById('paper-slip-text');
   if (paperSlipText) paperSlipText.textContent = t('paperText');
   if (cookieInteractive) cookieInteractive.setAttribute('aria-label', t('cookieAria'));
 
-  if (cardTitleText) cardTitleText.textContent = t('cardTitle');
+  if (cardTitleText) cardTitleText.textContent = t('appTitle');
+  if (resultSubtitleText) resultSubtitleText.textContent = texts.subtitle;
+  if (resultMessageLabel) resultMessageLabel.textContent = t('messageLabel');
   if (luckyTitleText) luckyTitleText.textContent = t('luckyTitle');
   if (btnAgainText) btnAgainText.textContent = t('again');
   if (btnStoryText) btnStoryText.textContent = t('storyCard');
@@ -2282,19 +2325,34 @@ function setupEventListeners() {
     if (cookieTapCount === 1) {
       cookieInteractive.classList.add('crack-stage-1');
       cookieInteractive.setAttribute('aria-label', t('firstCrack'));
-      showToast(t('firstCrack'));
+      if (document.documentElement.classList.contains('premium-experience')) {
+        hideToast();
+        updatePremiumLandingStage('first');
+      } else {
+        showToast(t('firstCrack'));
+      }
       return;
     }
     if (cookieTapCount === 2) {
       cookieInteractive.classList.add('crack-stage-2');
       cookieInteractive.setAttribute('aria-label', t('secondCrack'));
-      showToast(t('secondCrack'));
+      if (document.documentElement.classList.contains('premium-experience')) {
+        hideToast();
+        updatePremiumLandingStage('second');
+      } else {
+        showToast(t('secondCrack'));
+      }
       return;
     }
 
     cookieTapCount = 0;
     cookieInteractive.setAttribute('aria-label', t('preparingFortune'));
-    showToast(`✨ ${t('preparingFortune')}`);
+    if (document.documentElement.classList.contains('premium-experience')) {
+      hideToast();
+      updatePremiumLandingStage('opening');
+    } else {
+      showToast(`✨ ${t('preparingFortune')}`);
+    }
     void crackCookie();
   };
 

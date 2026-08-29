@@ -117,6 +117,11 @@
           <canvas id="crumb-canvas" class="crumb-canvas" width="300" height="240"></canvas>
           
           <div id="cookie-interactive" class="cookie-wrapper" tabIndex="0" role="button" aria-label="Şans kurabiyesini kırmak için tıklayın">
+            <div class="premium-cookie-art" aria-hidden="true">
+              <img class="premium-cookie-frame premium-cookie-frame-idle" src="/cookie-premium-idle-v2.png" alt="" />
+              <img class="premium-cookie-frame premium-cookie-frame-crack" src="/cookie-premium-crack-v2.png" alt="" />
+              <img class="premium-cookie-frame premium-cookie-frame-open" src="/cookie-premium-open-v2.png" alt="" />
+            </div>
             
             <!-- Real Photorealistic Fortune Cookie Image Container -->
             <div id="real-cookie-wrapper" class="real-cookie-wrapper">
@@ -228,13 +233,15 @@
               <span class="card-star cs-3">✧</span>
             </div>
             <h2 class="card-title" id="card-title-text">Your Fortune Cookie</h2>
+            <p class="result-subtitle" id="result-subtitle-text">Magic awaits inside</p>
           </header>
 
           <div class="result-portrait" aria-hidden="true">
-            <img src="/fortunecookie_story_template.png" alt="" />
+            <img src="/result-grandma-premium-v2.png" alt="" />
           </div>
 
           <div class="quote-wrapper">
+            <span class="result-message-label" id="result-message-label">Today’s message</span>
             <blockquote class="fortune-quote" id="fortune-quote-text">
               "The greatest glory in living lies not in never falling, but in rising every time we fall."
             </blockquote>

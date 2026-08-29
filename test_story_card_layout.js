@@ -12,12 +12,15 @@ const resultCss = css.slice(
 );
 
 test('in-app result is responsive and independent from the story export coordinates', () => {
-  assert.match(html, /class="result-portrait"[\s\S]*?src="\/fortunecookie_story_template\.png"/);
+  assert.match(html, /class="result-portrait"[\s\S]*?src="\/result-grandma-premium-v2\.png"/);
   assert.match(html, /class="result-portrait"[\s\S]*?class="quote-wrapper"/);
+  assert.match(html, /id="result-message-label"/);
+  assert.match(html, /id="result-subtitle-text"/);
   assert.match(css, /#state-result \.numbers-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(6,/);
-  assert.match(css, /#state-result \.result-portrait img\s*\{[\s\S]*?transform:\s*scale\(1\.25\)/);
+  assert.match(css, /#state-result \.result-portrait img\s*\{[\s\S]*?object-fit:\s*cover/);
+  assert.match(css, /#state-result \.number-badge\s*\{[^}]*border-radius:\s*13px/s);
   assert.doesNotMatch(resultCss, /aspect-ratio:\s*2\s*\/\s*3/);
-  assert.doesNotMatch(resultCss, /#state-result \.quote-wrapper\s*\{[\s\S]*?position:\s*absolute/);
+  assert.match(resultCss, /#state-result \.quote-wrapper\s*\{[^}]*position:\s*relative/s);
   assert.doesNotMatch(resultCss, /popNumberLocked/);
   assert.match(exporter, /fortunecookie_story_template\.png/);
 });
