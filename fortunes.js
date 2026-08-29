@@ -84,7 +84,7 @@ export const uiText = {
   tr: {
     appTitle: "Şans Kurabiyesi AI",
     paperText: "✨ ŞANS KURABİYESİ",
-    subtitle: "Şans kurabiyesini kırmak için dokunun!",
+    subtitle: "Şans kurabiyesini açmak için üç kez dokun",
     pillText: "Sihir içeride seni bekliyor",
     cardTitle: "Senin Şans Kurabiyen",
     luckyTitle: "Günün Şanslı Sayıları",
@@ -144,7 +144,7 @@ export const uiText = {
   en: {
     appTitle: "Fortune Cookie AI",
     paperText: "✨ FORTUNE COOKIE",
-    subtitle: "Tap the cookie to crack it open!",
+    subtitle: "Tap the cookie three times to open it",
     pillText: "Magic awaits inside",
     cardTitle: "Your Fortune Cookie",
     luckyTitle: "Your Lucky Numbers",
@@ -203,7 +203,7 @@ export const uiText = {
   },
   de: {
     appTitle: "Glückskeks AI",
-    subtitle: "Tippe auf den Keks, um ihn zu öffnen!",
+    subtitle: "Tippe dreimal, um den Keks zu öffnen",
     pillText: "Magie wartet im Inneren",
     cardTitle: "Dein Glücksspruch",
     luckyTitle: "Deine Glückszahlen",
@@ -261,7 +261,7 @@ export const uiText = {
   },
   fr: {
     appTitle: "Biscuit de Fortune AI",
-    subtitle: "Appuyez sur le biscuit pour l'ouvrir!",
+    subtitle: "Touchez trois fois pour ouvrir le biscuit",
     pillText: "La magie vous attend à l'intérieur",
     cardTitle: "Votre Prédiction",
     luckyTitle: "Vos Numéros Chanceux",
@@ -319,7 +319,7 @@ export const uiText = {
   },
   es: {
     appTitle: "Galleta de la Fortuna AI",
-    subtitle: "¡Toca la galleta para abrirla!",
+    subtitle: "Toca tres veces para abrir la galleta",
     pillText: "La magia te espera adentro",
     cardTitle: "Tu Fortuna",
     luckyTitle: "Números de la Suerte",
@@ -377,7 +377,7 @@ export const uiText = {
   },
   it: {
     appTitle: "Biscotto della Fortuna AI",
-    subtitle: "Tocca il biscotto per aprirlo!",
+    subtitle: "Tocca tre volte per aprire il biscotto",
     pillText: "La magia ti aspetta all'interno",
     cardTitle: "La Tua Fortuna",
     luckyTitle: "I Tuoi Numeri Fortunati",
@@ -435,7 +435,7 @@ export const uiText = {
   },
   el: {
     appTitle: "Μπισκότο Τύχης AI",
-    subtitle: "Πατήστε το μπισκότο για να το ανοίξετε!",
+    subtitle: "Αγγίξτε τρεις φορές για να ανοίξει το μπισκότο",
     pillText: "Η μαγεία σας περιμένει μέσα",
     cardTitle: "Η Τύχη Σας",
     luckyTitle: "Οι Τυχεροί Σας Αριθμοί",
@@ -493,7 +493,7 @@ export const uiText = {
   },
   zh: {
     appTitle: "幸运饼干 AI",
-    subtitle: "点击饼干，开启幸运！",
+    subtitle: "轻触三次，开启幸运饼干",
     pillText: "魔法就在其中",
     cardTitle: "你的专属签语",
     luckyTitle: "幸运数字",
@@ -551,7 +551,7 @@ export const uiText = {
   },
   ja: {
     appTitle: "フォーチュンクッキー AI",
-    subtitle: "クッキーをタップして開こう！",
+    subtitle: "3回タップしてクッキーを開こう",
     pillText: "中に魔法が待っています",
     cardTitle: "あなたの運勢",
     luckyTitle: "本日のラッキーナンバー",
@@ -609,7 +609,7 @@ export const uiText = {
   },
   ko: {
     appTitle: "포춘쿠키 AI",
-    subtitle: "쿠키를 터치하여 열어보세요!",
+    subtitle: "세 번 탭해서 쿠키를 열어보세요",
     pillText: "마법이 당신을 기다립니다",
     cardTitle: "오늘의 운세",
     luckyTitle: "오늘의 행운의 숫자",

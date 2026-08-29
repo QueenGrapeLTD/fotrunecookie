@@ -1429,7 +1429,7 @@ function resetCookieTapProgress() {
     'crack-stage-2',
     'cookie-tap-impact',
   );
-  cookieInteractive.setAttribute('aria-label', 'Şans kurabiyesini kırmak için üç kez dokunun');
+  cookieInteractive.setAttribute('aria-label', t('cookieAria'));
 }
 
 async function crackCookie() {
@@ -1858,6 +1858,11 @@ function updateLanguageUI() {
   document.querySelectorAll('[data-i18n-placeholder]').forEach((element) => {
     element.placeholder = t(element.dataset.i18nPlaceholder);
   });
+  document.querySelectorAll('[data-i18n-aria]').forEach((element) => {
+    const label = t(element.dataset.i18nAria);
+    element.setAttribute('aria-label', label);
+    element.title = label;
+  });
 
   if (appTitleText) appTitleText.textContent = t('appTitle');
   if (subtitleText) subtitleText.textContent = texts.subtitle;
@@ -2260,19 +2265,19 @@ function setupEventListeners() {
 
     if (cookieTapCount === 1) {
       cookieInteractive.classList.add('crack-stage-1');
-      cookieInteractive.setAttribute('aria-label', 'İlk çatlak oluştu, iki kez daha dokunun');
+      cookieInteractive.setAttribute('aria-label', t('firstCrack'));
       showToast(t('firstCrack'));
       return;
     }
     if (cookieTapCount === 2) {
       cookieInteractive.classList.add('crack-stage-2');
-      cookieInteractive.setAttribute('aria-label', 'İkinci çatlak oluştu, bir kez daha dokunun');
+      cookieInteractive.setAttribute('aria-label', t('secondCrack'));
       showToast(t('secondCrack'));
       return;
     }
 
     cookieTapCount = 0;
-    cookieInteractive.setAttribute('aria-label', 'Şans Kurabiyen hazırlanıyor');
+    cookieInteractive.setAttribute('aria-label', t('preparingFortune'));
     showToast(`✨ ${t('preparingFortune')}`);
     void crackCookie();
   };
@@ -2978,7 +2983,7 @@ function setupEventListeners() {
 
   btnSoundToggle.addEventListener('click', () => {
     const isEnabled = soundManager.toggleSound();
-    soundIcon.textContent = isEnabled ? '🔊' : '🔇';
+    soundIcon.classList.toggle('is-muted', !isEnabled);
   });
 }
 

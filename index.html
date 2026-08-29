@@ -40,23 +40,42 @@
     <!-- Top Navigation Bar (Clean & End-User Focused) -->
     <header class="top-bar">
       <div class="top-left-group">
-        <button id="btn-open-profile" class="control-btn" title="Profilim">
-          <span class="nav-icon">👤</span>
+        <button id="btn-open-profile" class="control-btn" title="Profilim" data-i18n-aria="profileNavAria" aria-label="Profilim">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 12.25a4.25 4.25 0 1 0 0-8.5 4.25 4.25 0 0 0 0 8.5Z" />
+            <path d="M4.75 20.25c.62-3.25 3.27-5.25 7.25-5.25s6.63 2 7.25 5.25" />
+          </svg>
         </button>
-        <button id="btn-open-history" class="control-btn" title="Geçmiş Şans Kurabiyelerim">
-          <span class="nav-icon">📜</span>
+        <button id="btn-open-history" class="control-btn" title="Geçmiş Şans Kurabiyelerim" data-i18n-aria="historyNavAria" aria-label="Geçmiş Şans Kurabiyelerim">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6.25 4.75h11.5v14.5H6.25z" />
+            <path d="M9 8h6M9 11.5h6M9 15h4" />
+          </svg>
         </button>
       </div>
 
       <div class="top-center-group">
-        <button id="btn-premium-top" class="premium-top-btn" title="Premium Paket">
-          <span>👑</span> <span class="premium-top-label" id="premium-top-label-text">Premium</span>
+        <button id="btn-premium-top" class="premium-top-btn" title="Premium Paket" data-i18n-aria="premiumNavAria" aria-label="Premium Paket">
+          <svg class="premium-crown-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m4 7 4.2 4L12 5l3.8 6L20 7l-1.45 10H5.45L4 7Z" />
+            <path d="M6 19h12" />
+          </svg>
+          <span class="premium-top-label" id="premium-top-label-text">Premium</span>
         </button>
       </div>
 
       <div class="top-right-group">
-        <button id="btn-sound-toggle" class="control-btn" title="Ses Aç/Kapat">
-          <span id="sound-icon">🔊</span>
+        <button id="btn-sound-toggle" class="control-btn" title="Ses Aç/Kapat" data-i18n-aria="soundNavAria" aria-label="Ses Aç/Kapat">
+          <span id="sound-icon" class="sound-icon" aria-hidden="true">
+            <svg class="sound-on-icon" viewBox="0 0 24 24">
+              <path d="M5 9.25h3.4L13 5.5v13l-4.6-3.75H5z" />
+              <path d="M16 9c1.45 1.65 1.45 4.35 0 6M18.5 6.5c2.8 3.05 2.8 7.95 0 11" />
+            </svg>
+            <svg class="sound-off-icon" viewBox="0 0 24 24">
+              <path d="M5 9.25h3.4L13 5.5v13l-4.6-3.75H5z" />
+              <path d="m16.5 9 4.5 6M21 9l-4.5 6" />
+            </svg>
+          </span>
         </button>
       </div>
     </header>
@@ -78,6 +97,11 @@
         <div id="premium-usage-counter" class="premium-usage-counter hidden">
           <span class="usage-icon">✨</span>
           <span id="premium-usage-text" class="usage-text">Premium AI aktif · Günlük 5 hak</span>
+        </div>
+
+        <div class="hero-copy">
+          <h1 class="app-title" id="app-title-text">Fortune Cookie</h1>
+          <p class="app-subtitle" id="subtitle-text">Tap the cookie to crack it open!</p>
         </div>
 
         <!-- Elegant 3D Fortune Cookie Hero -->
@@ -131,9 +155,6 @@
             </div>
           </div>
         </div>
-
-        <h1 class="app-title" id="app-title-text">Fortune Cookie</h1>
-        <p class="app-subtitle" id="subtitle-text">Tap the cookie to crack it open!</p>
 
         <!-- VIP AI Mode Badge Indicator -->
         <div id="vip-ai-mode-badge" class="vip-ai-mode-badge hidden">
