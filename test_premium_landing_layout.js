@@ -28,3 +28,12 @@ test('premium stage copy is localized and preparation status stays inline', () =
   assert.match(main, /updatePremiumLandingStage\('opening'\)/);
   assert.match(css, /\.premium-experience \.ai-fortune-loading-badge\s*\{[\s\S]*?grid-template-columns:\s*43px minmax\(0, 1fr\)/);
 });
+
+test('premium sparkle effects are isolated and respect reduced motion', () => {
+  assert.match(html, /class="cookie-sparkles" aria-hidden="true"/);
+  assert.match(css, /\.premium-experience \.real-cookie-wrapper \.cookie-magic-burst\s*\{\s*visibility:\s*visible/);
+  assert.match(css, /#state-landing\[data-cookie-stage="opening"\] \.cookie-sparkles/);
+  assert.match(css, /@keyframes premiumSparkleOpening/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.premium-experience \.cookie-sparkles \.c-star/);
+  assert.doesNotMatch(css, /(^|\n)\.ambient-sparkles\s*\{[^}]*premium/s);
+});

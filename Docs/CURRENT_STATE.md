@@ -27,5 +27,6 @@ Warnings: real-model cultural naturalness, browser/physical-device integration, 
 - The result presentation uses the approved larger Japanese grandmother artwork, double-bordered message card, compact lucky-number tiles, and minimal restart/story actions.
 - Native staging is synchronized for Android and iOS. Root tests: 117/117. Functions tests: 13/13. Production build, mobile configuration check, and App Store blocker check pass.
 - Independent `FORTUNE-QA`: PASS WITH WARNINGS. Emulator idle/crack/opening/result screenshots were visually verified and did not overlap.
+- Premium-only cookie stages now add a brief opening burst and restrained gold, coral, pink, and cyan sparkle accents. Decorative effects are hidden from accessibility APIs, honor reduced-motion preferences, and do not alter free/rewarded behavior or the approved layout. Root tests: 118/118; Functions tests: 13/13.
 
 Warning: the physical verified-premium phone was not visible to ADB during final QA. Premium presentation was exercised through the debuggable emulator DOM without changing account, billing, entitlement, or quota data. Store publication remains blocked on one real premium-device end-to-end run.
