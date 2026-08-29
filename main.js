@@ -227,6 +227,7 @@ const btnCloseAd = document.getElementById('btn-close-ad');
 
 const toast = document.getElementById('toast');
 const toastMessage = document.getElementById('toast-message');
+let toastHideTimer = null;
 
 function setBootstrapStatus(message) {
   const status = document.getElementById('app-bootstrap-status');
@@ -1304,6 +1305,7 @@ function startReadingSequence(isAiModeActive) {
     messageIndex += 1;
   };
 
+  hideToast();
   showMessage();
   if (badge) badge.classList.remove('hidden');
   if (paperSlipText) paperSlipText.textContent = `✨ ${t('preparingFortune').replace(/…$/, '').toLocaleUpperCase(currentLang)}`;
@@ -1543,6 +1545,9 @@ async function crackCookie() {
     await renderFortuneResult(fortuneText, generation, historyPersistence);
   } catch (err) {
     console.error('Error cracking cookie:', err);
+    // Keep the preparation card and the recoverable error message from
+    // competing for the same small-screen status space.
+    stopReadingSequence();
     const errorCode = String(err?.code || '');
     if (errorCode.includes('stale-fortune-context')) {
       showToast('Oturum, dil veya profil değişti. Eski sonuç kaydedilmedi; yeniden deneyin.');
@@ -2170,10 +2175,21 @@ async function shareStoryCard() {
   }
 }
 
+function hideToast() {
+  if (toastHideTimer) {
+    clearTimeout(toastHideTimer);
+    toastHideTimer = null;
+  }
+  toast.classList.add('hidden');
+  document.documentElement.classList.remove('app-status-visible');
+}
+
 function showToast(msg) {
+  if (toastHideTimer) clearTimeout(toastHideTimer);
   toastMessage.textContent = msg;
   toast.classList.remove('hidden');
-  setTimeout(() => toast.classList.add('hidden'), 2500);
+  document.documentElement.classList.add('app-status-visible');
+  toastHideTimer = setTimeout(hideToast, 2800);
 }
 
 

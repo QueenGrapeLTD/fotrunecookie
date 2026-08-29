@@ -99,9 +99,14 @@
           <span id="premium-usage-text" class="usage-text">Premium AI aktif · Günlük 5 hak</span>
         </div>
 
+        <div class="landing-core">
         <div class="hero-copy">
           <h1 class="app-title" id="app-title-text">Fortune Cookie</h1>
-          <p class="app-subtitle" id="subtitle-text">Tap the cookie to crack it open!</p>
+          <div class="magic-pill">
+            <span class="pill-sparkle-left" aria-hidden="true">✨</span>
+            <span id="pill-text">Magic awaits inside</span>
+            <span class="pill-sparkle-right" aria-hidden="true">💫</span>
+          </div>
         </div>
 
         <!-- Elegant 3D Fortune Cookie Hero -->
@@ -150,11 +155,10 @@
               <span class="c-star s3">✦</span>
               <span class="c-star s4">✧</span>
             </div>
-            <div class="crack-progress" aria-hidden="true">
-              <span></span><span></span><span></span>
-            </div>
           </div>
         </div>
+
+        <p class="app-subtitle hero-instruction" id="subtitle-text">Tap the cookie three times to open it</p>
 
         <!-- VIP AI Mode Badge Indicator -->
         <div id="vip-ai-mode-badge" class="vip-ai-mode-badge hidden">
@@ -162,20 +166,17 @@
         </div>
 
         <!-- Calm AI reading status shown while the fortune is prepared -->
-        <div id="ai-fortune-loading-badge" class="ai-fortune-loading-badge hidden">
-          <span class="reading-status-mark" aria-hidden="true">
-            <i></i><i></i><i></i>
-          </span>
-          <span class="reading-status-copy">
-            <strong id="ai-loading-primary">Kurabiyen açılıyor</strong>
-            <small id="ai-loading-secondary">Şans mesajın özenle hazırlanıyor</small>
-          </span>
+        <div class="landing-status-reserve" aria-live="polite" aria-atomic="true">
+          <div id="ai-fortune-loading-badge" class="ai-fortune-loading-badge hidden" role="status">
+            <span class="reading-status-mark" aria-hidden="true">
+              <i></i><i></i><i></i>
+            </span>
+            <span class="reading-status-copy">
+              <strong id="ai-loading-primary">Kurabiyen açılıyor</strong>
+              <small id="ai-loading-secondary">Şans mesajın özenle hazırlanıyor</small>
+            </span>
+          </div>
         </div>
-
-        <div class="magic-pill">
-          <span class="pill-sparkle-left">✨</span>
-          <span id="pill-text">Magic awaits inside</span>
-          <span class="pill-sparkle-right">💫</span>
         </div>
 
         <!-- Centered Bottom Action Button (Watch Ad) -->
@@ -219,14 +220,19 @@
             <span id="zodiac-badge-rising" class="zodiac-badge-rising"></span>
           </div>
 
-          <div class="card-icon-header">
-            <span class="card-star cs-1">✧</span>
-            <span class="card-star cs-main">✦</span>
-            <span class="card-star cs-2">✨</span>
-            <span class="card-star cs-3">✧</span>
-          </div>
+          <header class="result-heading">
+            <div class="card-icon-header" aria-hidden="true">
+              <span class="card-star cs-1">✧</span>
+              <span class="card-star cs-main">✦</span>
+              <span class="card-star cs-2">✨</span>
+              <span class="card-star cs-3">✧</span>
+            </div>
+            <h2 class="card-title" id="card-title-text">Your Fortune Cookie</h2>
+          </header>
 
-          <h2 class="card-title" id="card-title-text">Your Fortune Cookie</h2>
+          <div class="result-portrait" aria-hidden="true">
+            <img src="/fortunecookie_story_template.png" alt="" />
+          </div>
 
           <div class="quote-wrapper">
             <blockquote class="fortune-quote" id="fortune-quote-text">
@@ -749,7 +755,7 @@
     </div>
 
     <!-- Toast Notification -->
-    <div id="toast" class="toast hidden">
+    <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true">
       <span id="toast-message">Şansın kopyalandı! ✨</span>
     </div>
   </div>

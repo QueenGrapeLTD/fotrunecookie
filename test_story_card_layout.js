@@ -6,15 +6,20 @@ const css = fs.readFileSync(new URL('./style.css', import.meta.url), 'utf8');
 const exporter = fs.readFileSync(new URL('./cardExporter.js', import.meta.url), 'utf8');
 const main = fs.readFileSync(new URL('./main.js', import.meta.url), 'utf8');
 const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+const resultCss = css.slice(
+  css.indexOf('IN-APP FORTUNE RESULT'),
+  css.indexOf('APPLE LIQUID GLASS MODAL SYSTEM'),
+);
 
-test('result numbers stay locked to the six artwork medallions', () => {
-  assert.match(css, /\.numbers-grid\s*\{[\s\S]*?top:\s*4\.2cqw/);
-  assert.match(css, /\.number-badge\s*\{[\s\S]*?animation-name:\s*popNumberLocked/);
-  assert.match(css, /transform:\s*translate\(-50%,\s*-50%\)\s*scale\(1\)/);
-
-  for (const center of ['18%', '30.86%', '43.65%', '56.45%', '69.34%', '82.03%']) {
-    assert.ok(css.includes(`left: ${center}`), `Missing fixed medallion center ${center}`);
-  }
+test('in-app result is responsive and independent from the story export coordinates', () => {
+  assert.match(html, /class="result-portrait"[\s\S]*?src="\/fortunecookie_story_template\.png"/);
+  assert.match(html, /class="result-portrait"[\s\S]*?class="quote-wrapper"/);
+  assert.match(css, /#state-result \.numbers-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(6,/);
+  assert.match(css, /#state-result \.result-portrait img\s*\{[\s\S]*?transform:\s*scale\(1\.25\)/);
+  assert.doesNotMatch(resultCss, /aspect-ratio:\s*2\s*\/\s*3/);
+  assert.doesNotMatch(resultCss, /#state-result \.quote-wrapper\s*\{[\s\S]*?position:\s*absolute/);
+  assert.doesNotMatch(resultCss, /popNumberLocked/);
+  assert.match(exporter, /fortunecookie_story_template\.png/);
 });
 
 test('exported story artwork carries the permanent social watermark', () => {
