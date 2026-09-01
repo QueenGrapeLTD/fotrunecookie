@@ -6,6 +6,26 @@ import {
 } from "./firebaseService.js";
 
 const ADMIN_SESSION_KEY = "fc_admin_verified_v1";
+const ADMIN_AUTH_SHELL_ID = "admin-auth-shell";
+
+function setAdminContentHidden(hidden) {
+  document.querySelectorAll(".admin-container").forEach((container) => {
+    container.hidden = hidden;
+  });
+}
+
+function safeLoginErrorMessage(error) {
+  const code = typeof error === "string" ? error.split(" ")[0] : "";
+  const messages = {
+    "auth/popup-closed-by-user": "Google giriş penceresi kapatıldı. Tekrar deneyin.",
+    "auth/cancelled-popup-request": "Google giriş işlemi iptal edildi. Tekrar deneyin.",
+    "auth/popup-blocked": "Tarayıcı Google giriş penceresini engelledi. Açılır pencerelere izin verip tekrar deneyin.",
+    "auth/network-request-failed": "Ağ bağlantısı kurulamadı. Bağlantınızı kontrol edip tekrar deneyin.",
+    "auth/unauthorized-domain": "Bu alan adı Google girişi için yetkilendirilmemiş. Yöneticiyle iletişime geçin.",
+    "auth/operation-not-allowed": "Google girişi şu anda kullanılamıyor. Yöneticiyle iletişime geçin.",
+  };
+  return messages[code] || "Google girişi tamamlanamadı. Tekrar deneyin.";
+}
 
 function setDocumentMode(mode) {
   document.documentElement.classList.remove(
@@ -17,9 +37,14 @@ function setDocumentMode(mode) {
 
 function renderAccessScreen({ denied = false, error = "" } = {}) {
   setDocumentMode("admin-auth-screen");
-  document.body.replaceChildren();
+  setAdminContentHidden(true);
+
+  // Firebase App Check owns reCAPTCHA nodes attached to document.body. Only
+  // replace our auth shell so SDK-managed placeholders remain connected.
+  document.getElementById(ADMIN_AUTH_SHELL_ID)?.remove();
 
   const wrapper = document.createElement("main");
+  wrapper.id = ADMIN_AUTH_SHELL_ID;
   wrapper.className = "admin-auth-shell";
   wrapper.style.cssText =
     "min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at top,#fff7ed,#fffbeb 48%,#f0fdfa);font-family:system-ui,sans-serif;padding:24px;color:#422006";
@@ -66,7 +91,7 @@ function renderAccessScreen({ denied = false, error = "" } = {}) {
     await logoutUser().catch(() => {});
     const result = await loginWithGoogle();
     if (!result.success) {
-      status.textContent = "Google girişi tamamlanamadı. Tekrar deneyin.";
+      status.textContent = safeLoginErrorMessage(result.error);
       button.disabled = false;
       button.textContent = "Google ile güvenli giriş";
       return;
@@ -120,6 +145,8 @@ export async function requireAdminAccess() {
   }
 
   setDocumentMode("admin-authorized");
+  document.getElementById(ADMIN_AUTH_SHELL_ID)?.remove();
+  setAdminContentHidden(false);
   installAdminLogout();
   return true;
 }

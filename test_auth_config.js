@@ -182,6 +182,19 @@ test('admin pages require an explicit per-tab Google authorization gate', () => 
   assert.match(adminHtml, /html:not\(\.admin-authorized\)/);
 });
 
+test('admin authorization screen preserves Firebase App Check reCAPTCHA nodes', () => {
+  assert.doesNotMatch(adminGuardSource, /document\.body\.replaceChildren/);
+  assert.match(adminGuardSource, /ADMIN_AUTH_SHELL_ID = "admin-auth-shell"/);
+  assert.match(
+    adminGuardSource,
+    /document\.getElementById\(ADMIN_AUTH_SHELL_ID\)\?\.remove\(\)/,
+  );
+  assert.match(adminGuardSource, /document\.querySelectorAll\("\.admin-container"\)/);
+  assert.match(adminGuardSource, /container\.hidden = hidden/);
+  assert.match(adminGuardSource, /setAdminContentHidden\(true\)/);
+  assert.match(adminGuardSource, /setAdminContentHidden\(false\)/);
+});
+
 test('admin mutations are validated by callable server operations', () => {
   assert.match(authSource, /httpsCallable\(functions, "adminSetPremium"\)/);
   assert.match(authSource, /httpsCallable\(functions, "adminDeleteUser"\)/);
