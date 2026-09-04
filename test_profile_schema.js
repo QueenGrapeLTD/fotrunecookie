@@ -20,6 +20,8 @@ test('complete profile survives normalization without losing cloud fields', () =
     timezoneOffset: 3,
     zodiac: 'scorpio',
     risingSign: 'sagittarius',
+    astrologyOptIn: true,
+    risingSource: 'manual',
     category: 'career',
     categories: ['career'],
     preferredLanguage: 'tr',
@@ -39,6 +41,8 @@ test('complete profile survives normalization without losing cloud fields', () =
     timezoneOffset: 3,
     zodiac: 'scorpio',
     risingSign: 'sagittarius',
+    astrologyOptIn: true,
+    risingSource: 'manual',
     category: 'career',
     categories: ['career'],
     preferredLanguage: 'tr',
@@ -58,6 +62,40 @@ test('profile supports clearing optional fields instead of reviving stale values
   assert.equal(profile.birthplace, '');
   assert.equal(profile.risingSign, '');
   assert.equal(profile.latitude, null);
+  assert.equal(DEFAULT_PROFILE.birthtime, '');
+  assert.equal(DEFAULT_PROFILE.astrologyOptIn, false);
+  assert.equal(DEFAULT_PROFILE.risingSource, '');
+});
+
+test('legacy astrology fields do not silently opt in', () => {
+  const profile = normalizeProfile({
+    birthdate: '1990-11-12',
+    birthtime: '12:00',
+    zodiac: 'scorpio',
+    risingSign: 'sagittarius',
+  });
+
+  assert.equal(profile.birthtime, '12:00');
+  assert.equal(profile.zodiac, 'scorpio');
+  assert.equal(profile.risingSign, 'sagittarius');
+  assert.equal(profile.astrologyOptIn, false);
+  assert.equal(profile.risingSource, '');
+});
+
+test('astrology provenance accepts only explicit supported values', () => {
+  const manual = normalizeProfile({
+    astrologyOptIn: true,
+    risingSource: 'MANUAL',
+  });
+  const invalid = normalizeProfile({
+    astrologyOptIn: 'true',
+    risingSource: 'guessed',
+  });
+
+  assert.equal(manual.astrologyOptIn, true);
+  assert.equal(manual.risingSource, 'manual');
+  assert.equal(invalid.astrologyOptIn, false);
+  assert.equal(invalid.risingSource, '');
 });
 
 test('invalid profile choices are constrained to safe defaults', () => {
@@ -70,7 +108,7 @@ test('invalid profile choices are constrained to safe defaults', () => {
   });
 
   assert.equal(profile.birthdate, '');
-  assert.equal(profile.birthtime, '12:00');
+  assert.equal(profile.birthtime, '');
   assert.equal(profile.latitude, null);
   assert.equal(profile.category, 'general');
   assert.deepEqual(profile.categories, ['general']);

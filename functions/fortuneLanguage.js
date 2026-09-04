@@ -1,8 +1,8 @@
 const LATIN_MARKERS = {
-  tr: new Set(["ve", "bir", "bu", "bugün", "için", "ile", "sana", "senin", "olan", "gibi", "ama", "daha", "kendi"]),
+  tr: new Set(["ve", "bir", "bu", "bugün", "bugünün", "yarının", "için", "ile", "sana", "seni", "senin", "biri", "en", "insan", "arasındaki", "kendine", "kendi", "kişinin", "yüzündeki", "olan", "gibi", "ama", "daha"]),
   en: new Set(["the", "and", "your", "you", "a", "an", "to", "of", "in", "with", "that", "while", "today"]),
-  de: new Set(["der", "die", "das", "und", "dein", "deine", "du", "ein", "eine", "mit", "heute", "wird", "wenn"]),
-  fr: new Set(["le", "la", "les", "et", "votre", "vous", "un", "une", "de", "des", "avec", "aujourd’hui", "que"]),
+  de: new Set(["der", "die", "das", "den", "und", "dein", "deine", "du", "ein", "eine", "mit", "heute", "wird", "wenn", "ist", "als"]),
+  fr: new Set(["le", "la", "les", "et", "votre", "vous", "tu", "ton", "ta", "tes", "un", "une", "de", "des", "avec", "aujourd’hui", "que"]),
   es: new Set(["el", "la", "los", "las", "y", "tu", "tus", "un", "una", "de", "con", "hoy", "que"]),
   it: new Set(["il", "lo", "la", "gli", "le", "e", "tuo", "tua", "un", "una", "di", "con", "oggi", "che"]),
 };
@@ -32,7 +32,12 @@ function isLikelyLanguage(value, requestedLanguage) {
   const competitorScore = Math.max(...Object.keys(LATIN_MARKERS)
     .filter(language => language !== requestedLanguage)
     .map(language => markerScore(words, language)));
-  return requestedScore > 0 ? requestedScore >= competitorScore : competitorScore === 0;
+  if (requestedLanguage === "en") {
+    return requestedScore > 0
+      ? requestedScore >= competitorScore
+      : competitorScore === 0;
+  }
+  return requestedScore > 0 && requestedScore >= competitorScore;
 }
 
 module.exports = { isLikelyLanguage };

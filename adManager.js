@@ -343,6 +343,7 @@ class AdManager {
 
   async refresh(force = false) {
     if (!auth.currentUser) {
+      this.stateOwnerUid = "";
       this.state = {
         credits: 0,
         rewardedToday: 0,
@@ -356,27 +357,39 @@ class AdManager {
     if (this.stateOwnerUid !== uid) {
       this.stateOwnerUid = uid;
       this.lastRefreshAt = 0;
+      this.state = {
+        credits: 0,
+        rewardedToday: 0,
+        dailyLimit: DEFAULT_DAILY_AD_LIMIT,
+        adsPerCredit: 1,
+      };
     }
     if (!force && Date.now() - this.lastRefreshAt < AD_STATE_CACHE_MS) {
       return this.state;
     }
-    if (this.refreshPromise) return this.refreshPromise;
-    this.refreshPromise = (async () => {
+    if (this.refreshPromise?.uid === uid) return this.refreshPromise.promise;
+    const refreshPromise = (async () => {
       try {
-        this.state = await runAdOperation(
+        const nextState = await runAdOperation(
           getAdRewardStateFromServer(),
           AD_STATE_TIMEOUT_MS,
           "admob/reward-state-timeout",
         );
-        this.lastRefreshAt = Date.now();
+        if (auth.currentUser?.uid === uid && this.stateOwnerUid === uid) {
+          this.state = nextState;
+          this.lastRefreshAt = Date.now();
+        }
       } catch (error) {
         console.warn("Ad reward state unavailable:", error?.code);
       }
       return this.state;
     })().finally(() => {
-      this.refreshPromise = null;
+      if (this.refreshPromise?.promise === refreshPromise) {
+        this.refreshPromise = null;
+      }
     });
-    return this.refreshPromise;
+    this.refreshPromise = { uid, promise: refreshPromise };
+    return refreshPromise;
   }
 
   getPremiumQueries() {

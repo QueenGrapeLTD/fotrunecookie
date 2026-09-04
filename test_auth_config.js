@@ -61,11 +61,8 @@ test('native Google and Apple providers bridge into Firebase Auth', () => {
   assert.match(authSource, /auth\/apple-provider-timeout/);
   assert.match(authSource, /auth\/google-provider-timeout/);
   assert.match(authSource, /auth\/\$\{provider\}-web-session-timeout/);
-  assert.match(authSource, /useCredentialManager:\s*true/);
-  assert.match(authSource, /isRetryableGoogleNetworkError/);
-  assert.match(authSource, /attempt < 2/);
-  assert.match(authSource, /auth\/network-request-failed/);
-  assert.match(authSource, /Credential Manager compatibility failure; trying legacy Google Sign-In/);
+  assert.doesNotMatch(authSource, /useCredentialManager:\s*true/);
+  assert.doesNotMatch(authSource, /isRetryableGoogleNetworkError/);
   assert.match(authSource, /useCredentialManager:\s*false/);
   assert.match(authSource, /skipNativeAuth:\s*true/);
   assert.match(authSource, /preserveNativeAppleDisplayName/);
@@ -162,7 +159,8 @@ test('social users replace the local anonymous session without a persistence gat
 });
 
 test('anonymous bootstrap does not wait for remote account hydration', () => {
-  assert.match(mainSource, /getProfile\(currentLang\),\s*800/s);
+  assert.match(mainSource, /waitForInitialAuth\(\),\s*1100/s);
+  assert.match(mainSource, /getProfile\(currentLang, profileOwnerUid\(restoredUser\)\),\s*800/s);
   assert.match(mainSource, /ensureFreemiumSession\(\),\s*1200/s);
   assert.match(mainSource, /void settleWithTimeout\(\s*getAppSettingsFromCloud\(\)/s);
   assert.match(mainSource, /void settleWithTimeout\(\s*initialUserHydration/s);
@@ -182,6 +180,19 @@ test('admin pages require an explicit per-tab Google authorization gate', () => 
   assert.match(adminGuardSource, /Google ile güvenli giriş/);
   assert.match(adminGuardSource, /logoutUser\(\)/);
   assert.match(adminHtml, /html:not\(\.admin-authorized\)/);
+});
+
+test('admin authorization screen preserves Firebase App Check reCAPTCHA nodes', () => {
+  assert.doesNotMatch(adminGuardSource, /document\.body\.replaceChildren/);
+  assert.match(adminGuardSource, /ADMIN_AUTH_SHELL_ID = "admin-auth-shell"/);
+  assert.match(
+    adminGuardSource,
+    /document\.getElementById\(ADMIN_AUTH_SHELL_ID\)\?\.remove\(\)/,
+  );
+  assert.match(adminGuardSource, /document\.querySelectorAll\("\.admin-container"\)/);
+  assert.match(adminGuardSource, /container\.hidden = hidden/);
+  assert.match(adminGuardSource, /setAdminContentHidden\(true\)/);
+  assert.match(adminGuardSource, /setAdminContentHidden\(false\)/);
 });
 
 test('admin mutations are validated by callable server operations', () => {
@@ -228,8 +239,9 @@ test('anonymous users remain local except for expiring reward security ledgers',
   assert.match(mainSource, /accountStateCache\?\.isPremium === true/);
   assert.match(functionsSource, /isAnonymousRequest\(request\)/);
   assert.match(functionsSource, /reason: "anonymous-local-only"/);
-  assert.match(functionsSource, /persistHistory: isPremium/);
-  assert.match(functionsSource, /if \(persistHistory\)/);
+  assert.match(functionsSource, /persistNoveltyHistory: true/);
+  assert.match(functionsSource, /persistUserHistory: isPremium/);
+  assert.match(functionsSource, /if \(persistUserHistory\)/);
   assert.match(functionsSource, /anonymousAuthCount: anonymousAuthUids\.size/);
   assert.match(functionsSource, /expireAt: expiresAfter\(REQUEST_RETENTION_MS\)/);
   assert.match(functionsSource, /expireAt: expiresAfter\(AD_TRANSACTION_RETENTION_MS\)/);
@@ -262,12 +274,47 @@ test('profile actions remain above the native banner safe area', () => {
   assert.match(styles, /var\(--native-ad-banner-height, 50px\)/);
 });
 
-test('premium delivery starts from approved content with a safe AI adaptation fallback', () => {
-  assert.match(functionsSource, /selectApprovedContent\(\{/);
-  assert.match(functionsSource, /let prediction = selectedContent\.text/);
-  assert.match(functionsSource, /provider = "FortuneCookieAI-Curated"/);
-  assert.match(functionsSource, /variantType = "approved-fallback"/);
-  assert.match(functionsSource, /variantType = "ai-adaptation"/);
+test('premium delivery requires original Vertex AI content and refunds provider failures', () => {
+  const generateFortuneSource = functionsSource.slice(
+    functionsSource.indexOf('exports.generateFortune = onCall'),
+    functionsSource.indexOf('const FORTUNE_EVENT_TYPES'),
+  );
+  assert.match(functionsSource, /vertexai: true/);
+  assert.match(functionsSource, /location: GEMINI_VERTEX_LOCATION/);
+  assert.match(functionsSource, /async function generateGeminiContent/);
+  assert.match(generateFortuneSource, /const variantType = "ai-original"/);
+  assert.match(generateFortuneSource, /creativeVariationKey\(uid, requestId\)/);
+  assert.match(generateFortuneSource, /selectApprovedFortune/);
+  assert.match(generateFortuneSource, /attempts: FORTUNE_CANDIDATE_ATTEMPTS/);
+  assert.match(functionsSource, /FORTUNE_CANDIDATE_ATTEMPTS = 3/);
+  assert.match(generateFortuneSource, /requestFortuneJudgment/);
+  assert.match(generateFortuneSource, /hasDiscouragingTone/);
+  assert.match(generateFortuneSource, /hasHeavyNegativeFraming/);
+  assert.match(generateFortuneSource, /hasQuestionForm/);
+  assert.match(generateFortuneSource, /hasUpliftingTone/);
+  assert.doesNotMatch(generateFortuneSource, /bestSafeCandidate/);
+  assert.match(generateFortuneSource, /await releaseAiUsage\(uid, requestId, modelUsage\)/);
+  assert.match(generateFortuneSource, /"unavailable"/);
+  assert.doesNotMatch(generateFortuneSource, /approved-fallback/);
+  assert.doesNotMatch(generateFortuneSource, /selectedContent\.text/);
+});
+
+test('account switches isolate profile, account-state and ad-reward caches', () => {
+  const historySource = fs.readFileSync(
+    new URL('./historyStore.js', import.meta.url),
+    'utf8',
+  );
+  const adSource = fs.readFileSync(new URL('./adManager.js', import.meta.url), 'utf8');
+  assert.match(historySource, /PROFILE_KEY_PREFIX = 'fortune_cookie_profile_v2'/);
+  assert.match(historySource, /profileStorageKey\(ownerUid/);
+  assert.match(historySource, /if \(!value && !ownerUid\)/);
+  assert.match(authSource, /lastKnownAccountStateByUid = new Map\(\)/);
+  assert.match(authSource, /accountStateRetryAfterByUid = new Map\(\)/);
+  assert.match(authSource, /let authChangeVersion = 0/);
+  assert.match(mainSource, /let authUiVersion = 0/);
+  assert.match(mainSource, /isCurrentHydration/);
+  assert.match(adSource, /this\.refreshPromise\?\.uid === uid/);
+  assert.match(adSource, /auth\.currentUser\?\.uid === uid/);
 });
 
 test('all runtime Firebase clients are locked to the production project', () => {

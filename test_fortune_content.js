@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import test from 'node:test';
+import { fortunesDatabase } from './fortunesData.js';
 
 const require = createRequire(import.meta.url);
 const {
@@ -36,6 +37,16 @@ test('every curated message fits the story card contract', () => {
   }
 });
 
+test('client fortune data exactly matches the authoritative bundled source', () => {
+  const expected = {};
+  for (const item of BUNDLED_FORTUNE_CONTENT) {
+    expected[item.lang] ||= {};
+    expected[item.lang][item.category] ||= [];
+    expected[item.lang][item.category].push(item.text);
+  }
+  assert.deepEqual(fortunesDatabase, expected);
+});
+
 test('recent content is cooled down during selection', () => {
   const trItems = BUNDLED_FORTUNE_CONTENT.filter(
     (item) => item.lang === 'tr' && item.category === 'general',
@@ -48,6 +59,18 @@ test('recent content is cooled down during selection', () => {
     random: () => 0,
   });
   assert.equal(selected.id, trItems[3].id);
+});
+
+test('an unseen anchor is always preferred over a recent exact repeat', () => {
+  const trItems = BUNDLED_FORTUNE_CONTENT.filter((item) => item.lang === 'tr');
+  const selected = selectApprovedContent({
+    lang: 'tr',
+    category: 'general',
+    recentContentIds: trItems.slice(0, 15).map((item) => item.id),
+    recentTexts: trItems.slice(0, 15).map((item) => item.text),
+    random: () => 0,
+  });
+  assert.equal(selected.id, trItems[15].id);
 });
 
 test('a cloud rejection overrides the matching bundled message', () => {

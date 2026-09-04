@@ -19,25 +19,35 @@ service cloud.firestore {
       return signedIn() && request.auth.token.admin == true;
     }
 
+    function validAuthIdentity() {
+      return request.auth.token.email is string
+        && request.resource.data.email == request.auth.token.email
+        && request.auth.token.email_verified is bool
+        && request.resource.data.emailVerified == request.auth.token.email_verified;
+    }
+
     function validUserCreate(userId) {
       return request.resource.data.keys().hasOnly([
           'uid', 'displayName', 'firstName', 'lastName', 'email', 'photoURL',
           'authProvider', 'emailVerified', 'birthdate', 'birthtime',
           'birthplace', 'birthCountry', 'birthCity', 'birthRegion', 'timezoneId',
           'risingSign', 'zodiac', 'latitude', 'longitude', 'timezoneOffset',
+          'astrologyOptIn', 'risingSource',
           'category', 'categories', 'preferredLanguage', 'profileUpdatedAt',
           'lastLogin', 'createdAt'
         ])
         && request.resource.data.uid == userId
+        && validAuthIdentity()
         && validProfileData();
     }
 
     function validUserUpdate() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-        'displayName', 'firstName', 'lastName', 'email', 'photoURL',
-        'authProvider', 'emailVerified', 'birthdate', 'birthtime',
+        'displayName', 'firstName', 'lastName', 'photoURL',
+        'birthdate', 'birthtime',
         'birthplace', 'birthCountry', 'birthCity', 'birthRegion', 'timezoneId',
         'risingSign', 'zodiac', 'latitude', 'longitude', 'timezoneOffset',
+        'astrologyOptIn', 'risingSource',
         'category', 'categories', 'preferredLanguage', 'profileUpdatedAt',
         'lastLogin'
       ]) && validProfileData();
@@ -79,6 +89,13 @@ service cloud.firestore {
         && request.resource.data.risingSign.size() <= 20
         && request.resource.data.zodiac is string
         && request.resource.data.zodiac.size() <= 20
+        && (!request.resource.data.keys().hasAny(['astrologyOptIn'])
+          || request.resource.data.astrologyOptIn is bool)
+        && (!request.resource.data.keys().hasAny(['risingSource'])
+          || (request.resource.data.risingSource is string
+            && (request.resource.data.risingSource == ''
+              || request.resource.data.risingSource == 'manual'
+              || request.resource.data.risingSource == 'calculated')))
         && request.resource.data.category is string
         && (request.resource.data.category == 'general'
           || request.resource.data.category == 'love'
@@ -117,7 +134,8 @@ service cloud.firestore {
     function validFortuneData() {
       return request.resource.data.keys().hasOnly([
           'quote', 'zodiacId', 'zodiacIcon', 'zodiacName', 'numbers', 'timestamp',
-          'contentId', 'contentCategory', 'contentSource', 'variantType', 'requestId'
+          'contentId', 'contentCategory', 'contentSource', 'variantType', 'requestId',
+          'reflection', 'reaction', 'reflectedAt'
         ])
         && request.resource.data.quote is string
         && request.resource.data.quote.size() >= 1
@@ -141,7 +159,19 @@ service cloud.firestore {
         && request.resource.data.variantType is string
         && request.resource.data.variantType.size() <= 32
         && request.resource.data.requestId is string
-        && request.resource.data.requestId.size() <= 128;
+        && request.resource.data.requestId.size() <= 128
+        && (!request.resource.data.keys().hasAny(['reflection'])
+          || (request.resource.data.reflection is string
+            && request.resource.data.reflection.size() <= 500))
+        && (!request.resource.data.keys().hasAny(['reaction'])
+          || (request.resource.data.reaction is string
+            && (request.resource.data.reaction == ''
+              || request.resource.data.reaction == 'keep'
+              || request.resource.data.reaction == 'act'
+              || request.resource.data.reaction == 'release')))
+        && (!request.resource.data.keys().hasAny(['reflectedAt'])
+          || (request.resource.data.reflectedAt is string
+            && request.resource.data.reflectedAt.size() <= 30));
     }
 
     match /users/{userId} {
@@ -164,12 +194,15 @@ service cloud.firestore {
 
     match /settings/app_config {
       allow read: if true;
-      allow write: if isAdmin();
+      // Settings are changed only through the validated admin callable. The
+      // Admin SDK bypasses rules, so no client needs direct write access.
+      allow write: if false;
     }
 
     match /public_config/{docId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      // No client feature consumes this collection. Keeping an open-ended
+      // public namespace risks publishing future configuration by accident.
+      allow read, write: if false;
     }
 
     match /_usage/{docId} {

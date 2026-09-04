@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:hosting": "node scripts/build-hosting-sites.js",
+    "sync:fortune-data": "node scripts/sync-fortune-data.js",
     "test": "node --test test_*.js",
     "predeploy:check": "node scripts/predeploy-check.js && npm test && npm --prefix functions test && npm run build && npm run build:hosting",
     "mobile:check": "node scripts/mobile-config-check.js",

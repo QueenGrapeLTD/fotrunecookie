@@ -10,7 +10,13 @@
 
 import { callGenerateFortuneCloudFunction } from './firebaseService.js';
 import { fortunesDatabase } from './fortunesData.js';
-import { isLikelyLanguage } from './languageGuard.js';
+import {
+  hasFrighteningOutcome,
+  hasInvalidFortuneToken,
+  isLikelyLanguage,
+} from './languageGuard.js';
+
+const CUSTOM_FORTUNES_KEY = 'fc_custom_fortunes_db_v2';
 
 export const zodiacElements = {
   aries: { element: 'fire', quality: 'cardinal', ruler: 'Mars', symbol: '♈', aspect: 'passion' },
@@ -47,6 +53,49 @@ const UNSAFE_PATTERNS = [
   /\b(you will lose everything|you will be alone|you will never be happy|there is no hope)\b/iu
 ];
 
+const RETRYABLE_FORTUNE_ERROR_CODES = new Set([
+  'functions/aborted',
+  'aborted',
+  'functions/deadline-exceeded',
+  'deadline-exceeded',
+  'functions/unavailable',
+  'unavailable',
+  'auth/network-request-failed',
+  'network-request-failed',
+]);
+
+function fortuneRequestErrorReason(error) {
+  const details = error?.details;
+  const reason = typeof details === 'string'
+    ? details
+    : details?.reason || details?.code || '';
+  return String(reason).trim().toUpperCase().replace(/[-\s]+/g, '_');
+}
+
+export function classifyFortuneRequestError(error) {
+  const code = String(error?.code || '');
+  const retryable = RETRYABLE_FORTUNE_ERROR_CODES.has(code);
+  if (fortuneRequestErrorReason(error) === 'QUALITY_EXHAUSTED') {
+    return {
+      retryable: true,
+      message: 'AI bu denemede kalite kontrolünü geçen bir Şans Kurabiyesi yazısı üretemedi. Kurabiyeye tekrar dokun; yeniden üretim ek premium hakkı kullanmadan denenecek.',
+    };
+  }
+  if (code.endsWith('aborted')) {
+    return {
+      retryable: true,
+      message: 'İsteğin sunucuda hâlâ işleniyor. Birkaç saniye sonra kurabiyeye tekrar dokun; aynı istek ek premium hakkı kullanmadan sürdürülecek.',
+    };
+  }
+  if (retryable) {
+    return {
+      retryable: true,
+      message: 'AI yanıtı bağlantı veya zaman aşımı nedeniyle tamamlanamadı. Kurabiyeye tekrar dokun; aynı istek güvenle sürdürülecek ve ek premium hakkı kullanılmayacak.',
+    };
+  }
+  return { retryable: false, message: '' };
+}
+
 function cleanText(value) {
   return String(value || '')
     .trim()
@@ -54,15 +103,46 @@ function cleanText(value) {
     .replace(/\s+/g, ' ');
 }
 
-export function isFortuneSafe(value) {
+function sanitizeFortuneName(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/[^\p{L}\p{M}\s.'’-]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 32);
+}
+
+function hasAtMostOnePersonalName(value, expectedName = '', language = 'en') {
+  const name = sanitizeFortuneName(expectedName).toLocaleLowerCase(language);
+  if (!name) return true;
+  const text = String(value || '').normalize('NFKC').toLocaleLowerCase(language);
+  let occurrences = 0;
+  let cursor = 0;
+  while (cursor <= text.length - name.length) {
+    const index = text.indexOf(name, cursor);
+    if (index < 0) break;
+    const before = text.slice(0, index).match(/.$/u)?.[0] || '';
+    const after = text.slice(index + name.length).match(/^./u)?.[0] || '';
+    const isBoundary = character => !character || !/[\p{L}\p{M}\p{N}]/u.test(character);
+    if (isBoundary(before) && isBoundary(after)) occurrences += 1;
+    if (occurrences > 1) return false;
+    cursor = index + Math.max(name.length, 1);
+  }
+  return true;
+}
+
+export function isFortuneSafe(value, lang = 'en', expectedName = '') {
   const text = cleanText(value);
-  if (text.length < 15 || text.length > 360) return false;
-  return !UNSAFE_PATTERNS.some(pattern => pattern.test(text));
+  if (text.length < 15 || text.length > 200) return false;
+  if (UNSAFE_PATTERNS.some(pattern => pattern.test(text))) return false;
+  if (hasFrighteningOutcome(text, lang)) return false;
+  if (hasInvalidFortuneToken(text)) return false;
+  return hasAtMostOnePersonalName(text, expectedName, lang);
 }
 
 function getDatabase() {
   try {
-    const custom = localStorage.getItem('fc_custom_fortunes_db');
+    const custom = localStorage.getItem(CUSTOM_FORTUNES_KEY);
     if (custom) return JSON.parse(custom);
   } catch (error) {
     console.warn('Custom fortune database could not be read:', error);
@@ -79,7 +159,7 @@ function getSafeFallback(lang = 'tr', name = '') {
 export function generatePersonalizedAIFortune(profile = {}, lang = 'tr', baseFortune = '') {
   const name = cleanText(profile.name).slice(0, 50);
 
-  if (isFortuneSafe(baseFortune)) {
+  if (isFortuneSafe(baseFortune, lang)) {
     return name ? `${name}, ${cleanText(baseFortune)}` : cleanText(baseFortune);
   }
 
@@ -91,7 +171,7 @@ export function generatePersonalizedAIFortune(profile = {}, lang = 'tr', baseFor
   if (Array.isArray(candidates) && candidates.length) {
     for (let attempt = 0; attempt < Math.min(candidates.length, 25); attempt += 1) {
       const candidate = candidates[Math.floor(Math.random() * candidates.length)];
-      if (isFortuneSafe(candidate)) {
+      if (isFortuneSafe(candidate, lang)) {
         const text = cleanText(candidate);
         return name ? `${name}, ${text}` : text;
       }
@@ -101,113 +181,27 @@ export function generatePersonalizedAIFortune(profile = {}, lang = 'tr', baseFor
   return getSafeFallback(lang, name);
 }
 
-const DIRECT_STYLE_CUES = {
-  tr: [
-    'gün içinde gelen kısa bir mesaj veya sıcak bir konuşma',
-    'işte ya da üretimde fark edilen küçük bir fırsat',
-    'yeni bir tanışma, davet veya tatlı bir tesadüf',
-    'ertelenen bir konuda verilen sade ama cesur bir karar',
-    'ev, aile veya yakın bir dostla yaşanan içten bir an',
-    'merak uyandıran yeni bir fikir, rota veya öğrenme isteği',
-    'beklenmedik küçük bir jest ya da sevindirici haber',
-    'günlük ritmi hafifleten keyifli bir değişiklik',
-  ],
-  en: [
-    'a short message or warm conversation during the day',
-    'a small opportunity noticed in work or creativity',
-    'a new introduction, invitation, or pleasant coincidence',
-    'a simple but courageous decision about something delayed',
-    'a sincere moment involving home, family, or a close friend',
-    'a fresh idea, route, or desire to learn',
-    'an unexpected kind gesture or welcome news',
-    'a pleasant change that brings a lighter daily rhythm',
-  ],
-};
-
-const LANGUAGE_NAMES = {
-  tr: 'Türkçe', en: 'English', de: 'Deutsch', fr: 'Français', es: 'Español',
-  it: 'Italiano', el: 'Ελληνικά', zh: '简体中文', ja: '日本語', ko: '한국어'
-};
-
-function buildPrompt(profile = {}, lang = 'tr') {
-  const name = cleanText(profile.name).slice(0, 50) || (lang === 'tr' ? 'Gezgin' : 'Seeker');
-  const sun = cleanText(profile.zodiac) || 'Belirtilmedi';
-  const rising = cleanText(profile.risingSign) || 'Belirtilmedi';
-  const categoryKey = (profile.category || 'general').toLowerCase();
-  const styleCues = DIRECT_STYLE_CUES[lang] || DIRECT_STYLE_CUES.en;
-  const styleCue = styleCues[Math.floor(Math.random() * styleCues.length)];
-
-  return `ROL VE MİSYON:
-Sen göksel haritadan ilham alan, neşeli, sıcak ve zeki bir Şans Kurabiyesi yazarısın.
-
-KULLANICI HARİTA VE ODAK BİLGİLERİ:
-- İsim: ${name}
-- Güneş Burcu: ${sun}
-- Yükselen Burç: ${rising}
-- Odak Alanı: ${categoryKey} (Aşk, Kariyer, Huzur veya Genel Şans)
-- Çıktı Dili: ${LANGUAGE_NAMES[lang] || LANGUAGE_NAMES.en} (${lang})
-- Yanıtın tamamını yalnızca bu dilde ve o dilin doğal yazım sistemiyle yaz; başka dil karıştırma.
-- Bu çıktının yaratıcı yönü: ${styleCue}
-
-ÖNEMLİ YAZIM VE ÇEŞİTLİLİK KURALLARI:
-1. Burç yalnızca ince bir ton sinyalidir; element, yönetici gezegen veya burç klişelerinden sahne üretme.
-2. "Derin sular, sessizlik, karanlık, gölgeler, sabır, vakti gelince, kaya, dağ, zirve, fırtına, şafak ve ışık" kalıp havuzunu kullanma.
-3. Verilen yaratıcı yönden günlük hayata dokunan, somut ve taze tek bir işaret çıkar.
-4. Seçilen odak alanına (${categoryKey}) doğrudan temas et.
-5. İsmi kullanmak zorunlu değildir; kullanırsan en fazla bir kez ve doğal biçimde kullan.
-6. Kesin gelecek iddiası yerine "olabilir, fark edebilirsin, kapı aralayabilir" gibi yumuşak bir dil seç.
-7. Ölüm, cinayet, intihar, kaza, hastalık ve felaket gibi korkutucu kavramlar kesinlikle yasaktır.
-8. Japon tsujiura senbei öncüllerini ve omikuji'nin yaşam rehberi yaklaşımını bilen, sakin ve şefkatli Japon bir büyükanne anlatıcısının sesiyle yaz. Aksan, karikatür, kutsal otorite veya Japonya kartpostalı klişeleri kullanma.
-9. Önce gündelik ya da mevsimsel tek duyusal görüntü, ardından ölçülü ve uygulanabilir bir yön ver.
-10. Tam 1 veya 2 kısa cümle, 12–22 kelime ve en fazla 135 karakter. Yalnızca Şans Kurabiyesi mesajını döndür; tırnak, emoji ve açıklama yazma.`;
-}
-
-async function callGeminiDirect(profile, lang, options) {
-  if (!options.apiKey || options.apiKey.length <= 20) return null;
-
-  const model = options.model || 'gemini-3.5-flash-lite';
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${options.apiKey}`;
-  const payload = {
-    contents: [{ role: 'user', parts: [{ text: buildPrompt(profile, lang) }] }],
-    generationConfig: {
-      maxOutputTokens: 90
-    }
-  };
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok) {
-    throw new Error(`Gemini request failed with HTTP ${response.status}`);
-  }
-
-  const data = await response.json();
-  return cleanText(data.candidates?.[0]?.content?.parts?.[0]?.text);
-}
-
 export async function fetchRemoteAIPrediction(profile = {}, lang = 'tr', options = {}) {
   const requestId =
     options.requestId ||
     globalThis.crypto?.randomUUID?.() ||
     `${Date.now()}_${Math.random().toString(36).slice(2, 18)}`;
   let cloudError = null;
+  const expectedName = sanitizeFortuneName(profile.name);
   try {
     const cloudResult = await callGenerateFortuneCloudFunction({
       ...profile
-    }, lang, requestId);
+    }, lang, requestId, options.timeoutMs);
 
     if (
-      isFortuneSafe(cloudResult?.prediction) &&
+      isFortuneSafe(cloudResult?.prediction, lang, expectedName) &&
       isLikelyLanguage(cloudResult.prediction, lang)
     ) {
       return cloudResult;
     }
 
     if (cloudResult?.prediction) {
-      console.warn('Cloud fortune rejected by safety or language guard.', { lang });
+      console.warn('Cloud fortune rejected by output validation.', { lang });
     }
   } catch (error) {
     cloudError = error;
@@ -221,21 +215,10 @@ export async function fetchRemoteAIPrediction(profile = {}, lang = 'tr', options
       'unauthenticated',
       'functions/aborted',
       'aborted',
+      'functions/unavailable',
+      'unavailable',
     ]);
     if (terminalCodes.has(error?.code)) throw error;
-  }
-
-  try {
-    const directText = await callGeminiDirect(profile, lang, options);
-    if (isFortuneSafe(directText) && isLikelyLanguage(directText, lang)) {
-      return {
-        success: true,
-        prediction: directText,
-        provider: 'Gemini-3.5-Flash-Lite (Direct API)'
-      };
-    }
-  } catch (error) {
-    console.warn('Direct Gemini generation unavailable:', error);
   }
 
   if (options.requireRemote) {

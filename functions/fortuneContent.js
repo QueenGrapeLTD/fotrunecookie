@@ -1,9 +1,12 @@
 "use strict";
 
+const { isTooSimilar } = require("./fortuneQuality");
+
 const SUPPORTED_LANGUAGES = [
   "tr", "en", "de", "fr", "es", "it", "el", "zh", "ja", "ko",
 ];
 const CATEGORIES = ["general", "love", "career", "health"];
+const CONTENT_VERSION = 2;
 
 const RAW_CONTENT = {
   tr: {
@@ -11,7 +14,7 @@ const RAW_CONTENT = {
       "Sıradan görünen bir an, yakında güzel bir anlam kazanacak.",
       "Aradığın cevap, hiç beklemediğin kadar tanıdık bir yerde.",
       "Bugünün küçük tesadüfü, yarının sevilen hikâyesi olabilir.",
-      "İçini ısıtan bir haber, sessizce sana doğru yol alıyor.",
+      "Sana ulaşan içten bir haber, günün en güzel sürprizine dönüşebilir.",
     ],
     love: [
       "Kalbinde yarım kalan bir cümle, sıcak bir karşılık bulabilir.",
@@ -20,7 +23,7 @@ const RAW_CONTENT = {
       "İki insan arasındaki en güzel yakınlık, rahatça susabilmektir.",
     ],
     career: [
-      "Emeğinin sessiz kısmı, doğru kişi tarafından fark edilmek üzere.",
+      "Emeğindeki özgün ayrıntı, doğru kişinin dikkatini çekmeye hazırlanıyor.",
       "Gözden kaçan bir fikir, masadaki en değerli şeye dönüşebilir.",
       "Küçük bir ayrıntı, üzerinde çalıştığın işin yönünü değiştirecek.",
       "Yeteneğin, beklemediğin bir konuşmada kendine yer açabilir.",
@@ -95,7 +98,7 @@ const RAW_CONTENT = {
       "Un sentiment inachevé pourrait bientôt trouver une réponse chaleureuse.",
       "La personne qui te comprend remarque aussi tes silences.",
       "Un sourire familier pourrait bientôt prendre un nouveau sens.",
-      "La plus belle proximité se sent aussi dans le silence.",
+      "Un geste sincère peut rendre une belle proximité encore plus chaleureuse.",
     ],
     career: [
       "La partie discrète de ton travail sera bientôt remarquée.",
@@ -281,6 +284,7 @@ const BUNDLED_FORTUNE_CONTENT = Object.freeze(
           status: "approved",
           qualityScore: 5,
           source: "curated",
+          contentVersion: CONTENT_VERSION,
         }),
       ),
     ),
@@ -308,6 +312,7 @@ function normalizeContentDocument(id, data = {}) {
     source: ["curated", "manual", "ai-draft"].includes(data.source)
       ? data.source
       : "manual",
+    contentVersion: Math.max(Number(data.contentVersion) || 1, 1),
   };
 }
 
@@ -332,7 +337,26 @@ function selectApprovedContent({
   random = Math.random,
 }) {
   const pool = contentPoolForLanguage(lang, cloudContent);
-  const scored = pool.map((item) => {
+  const recentIds = new Set(recentContentIds.slice(0, 24));
+  const normalizedRecentTexts = new Set(
+    recentTexts.slice(0, 24).map((text) => String(text).trim().toLocaleLowerCase()),
+  );
+  const exactFresh = pool.filter(
+    (item) =>
+      !recentIds.has(item.id) &&
+      !normalizedRecentTexts.has(item.text.toLocaleLowerCase()),
+  );
+  const semanticallyFresh = exactFresh.filter(
+    (item) => !isTooSimilar(item.text, recentTexts.slice(0, 12)),
+  );
+  // Never repeat an anchor while any unseen option remains. Semantic novelty
+  // is preferred, but exact novelty wins over returning no safe fallback.
+  const selectionPool = semanticallyFresh.length
+    ? semanticallyFresh
+    : exactFresh.length
+      ? exactFresh
+      : pool;
+  const scored = selectionPool.map((item) => {
     let score = item.qualityScore * 2;
     if (item.category === category) score += 5;
     if (item.category === "general") score += 1;
@@ -341,7 +365,7 @@ function selectApprovedContent({
       // Immediate anchor reuse is much more noticeable than an older repeat.
       score -= Math.max(34 - recentIndex * 2, 10);
     }
-    const textWasRecent = recentTexts.some(
+    const textWasRecent = recentTexts.slice(0, 24).some(
       (text) => String(text).trim().toLocaleLowerCase() === item.text.toLocaleLowerCase(),
     );
     if (textWasRecent) score -= 25;
@@ -351,7 +375,7 @@ function selectApprovedContent({
   });
   scored.sort((a, b) => b.score - a.score);
   const candidates = scored.slice(0, Math.min(6, scored.length));
-  return candidates[Math.floor(random() * candidates.length)]?.item || pool[0];
+  return candidates[Math.floor(random() * candidates.length)]?.item || selectionPool[0];
 }
 
 function buildAdaptationPrompt({
@@ -401,6 +425,7 @@ Return only the final message.`;
 module.exports = {
   BUNDLED_FORTUNE_CONTENT,
   CATEGORIES,
+  CONTENT_VERSION,
   SUPPORTED_LANGUAGES,
   buildAdaptationPrompt,
   contentPoolForLanguage,

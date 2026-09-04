@@ -5,7 +5,8 @@ import { DEFAULT_PROFILE, normalizeProfile } from './profileSchema.js';
 
 const HISTORY_FILE = 'fortune_cookie_history_v1.json';
 const HISTORY_LOCAL_KEY = 'fortune_cookie_history_v2';
-const PROFILE_KEY = 'fortune_cookie_profile_v1';
+const LEGACY_PROFILE_KEY = 'fortune_cookie_profile_v1';
+const PROFILE_KEY_PREFIX = 'fortune_cookie_profile_v2';
 
 // Cache for history to prevent constant disk reads
 let historyCache = null;
@@ -60,12 +61,123 @@ async function writeStoredHistory(history) {
 
 function historyFingerprint(item) {
   const day = String(item?.timestamp || '').slice(0, 10);
-  const numbers = Array.isArray(item?.numbers) ? item.numbers.join(',') : '';
-  return `${day}|${String(item?.quote || item?.text || '').trim()}|${numbers}`;
+  const quote = String(item?.quote || item?.text || '').trim().replace(/\s+/g, ' ');
+  return `${day}|${quote}`;
 }
 
 function newestFirst(a, b) {
   return new Date(b?.timestamp || 0).getTime() - new Date(a?.timestamp || 0).getTime();
+}
+
+function meaningful(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  return value !== null && value !== undefined && String(value).trim() !== '';
+}
+
+function historyRichness(item) {
+  const weightedFields = [
+    ['numbers', 3],
+    ['zodiacId', 1],
+    ['zodiacIcon', 1],
+    ['zodiacName', 1],
+    ['contentId', 1],
+    ['contentCategory', 1],
+    ['contentSource', 1],
+    ['variantType', 1],
+    ['reflection', 4],
+    ['reaction', 2],
+    ['reflectedAt', 1],
+  ];
+  return weightedFields.reduce(
+    (score, [field, weight]) => score + (meaningful(item?.[field]) ? weight : 0),
+    0,
+  );
+}
+
+function canonicalRequestId(items) {
+  for (const item of items) {
+    const requestId = String(item?.requestId || '').trim();
+    if (requestId) return requestId;
+  }
+  return '';
+}
+
+function mergeHistoryGroup(items, ownerUid) {
+  const ranked = [...items].sort((a, b) => {
+    const richnessDifference = historyRichness(b) - historyRichness(a);
+    return richnessDifference || newestFirst(a, b);
+  });
+  const richest = ranked[0] || {};
+  const merged = { ...richest };
+
+  for (const item of ranked.slice(1)) {
+    for (const [field, value] of Object.entries(item || {})) {
+      if (!meaningful(merged[field]) && meaningful(value)) merged[field] = value;
+    }
+  }
+
+  const reflected = ranked
+    .filter(item => meaningful(item?.reflection) || meaningful(item?.reaction))
+    .sort((a, b) => new Date(b?.reflectedAt || 0) - new Date(a?.reflectedAt || 0))[0];
+  if (reflected) {
+    merged.reflection = String(reflected.reflection || '').trim().slice(0, 500);
+    merged.reaction = ['keep', 'act', 'release'].includes(reflected.reaction)
+      ? reflected.reaction
+      : '';
+    merged.reflectedAt = reflected.reflectedAt || merged.reflectedAt || '';
+  }
+
+  const requestId = canonicalRequestId(ranked);
+  const fallbackId = String(
+    richest.id || richest.cloudId || ranked.find(item => item?.id)?.id || Date.now(),
+  );
+  merged.id = requestId || fallbackId;
+  merged.cloudId = requestId || merged.cloudId || null;
+  merged.requestId = requestId || String(merged.requestId || '');
+  merged.ownerUid = ownerUid || null;
+  merged.cloudPersisted = ranked.some(item => item?.cloudPersisted === true);
+  return merged;
+}
+
+/**
+ * Pure reconciliation helper used by the store and deterministic tests.
+ * requestId is authoritative; the legacy day+quote key joins pre-requestId rows.
+ */
+export function mergeHistoryRecords(cloudItems = [], localItems = [], ownerUid = null) {
+  const normalizedCloud = (Array.isArray(cloudItems) ? cloudItems : []).map(item => ({
+    ...item,
+    id: item?.requestId || item?.id || item?.cloudId || '',
+    cloudId: item?.requestId || item?.cloudId || item?.id || null,
+    ownerUid,
+    cloudPersisted: true,
+  }));
+  const normalizedLocal = (Array.isArray(localItems) ? localItems : []).map(item => ({
+    ...item,
+    ownerUid,
+  }));
+  const byRequest = new Map();
+
+  for (const item of [...normalizedCloud, ...normalizedLocal]) {
+    const requestId = String(item?.requestId || '').trim();
+    const key = requestId
+      ? `request:${requestId}`
+      : `legacy:${historyFingerprint(item)}`;
+    if (!byRequest.has(key)) byRequest.set(key, []);
+    byRequest.get(key).push(item);
+  }
+
+  const byFingerprint = new Map();
+  for (const group of byRequest.values()) {
+    const merged = mergeHistoryGroup(group, ownerUid);
+    const fingerprint = historyFingerprint(merged);
+    if (!byFingerprint.has(fingerprint)) byFingerprint.set(fingerprint, []);
+    byFingerprint.get(fingerprint).push(merged);
+  }
+
+  return [...byFingerprint.values()]
+    .map(group => mergeHistoryGroup(group, ownerUid))
+    .sort(newestFirst)
+    .slice(0, 100);
 }
 
 /**
@@ -81,47 +193,27 @@ export async function getHistory(ownerUid = undefined) {
 export async function saveFortuneToHistory(fortuneItem, ownerUid = null) {
   try {
     const history = await getStoredHistory();
+    const requestId = String(fortuneItem?.requestId || '').trim();
     const newItem = {
-      id: Date.now().toString(),
+      id: requestId || Date.now().toString(),
       timestamp: new Date().toISOString(),
       ...fortuneItem,
+      ...(requestId ? { id: requestId, requestId } : {}),
       ownerUid: ownerUid || null,
     };
-    
-    history.unshift(newItem); // newest first
-    const ownerItems = history.filter(item => item.ownerUid === newItem.ownerUid);
-    if (ownerItems.length > 100) {
-      const excessItems = new Set(ownerItems.slice(100));
-      await writeStoredHistory(history.filter(item => !excessItems.has(item)));
-    } else {
-      await writeStoredHistory(history);
-    }
-    return newItem;
+
+    const otherOwners = history.filter(item => item.ownerUid !== newItem.ownerUid);
+    const ownerItems = mergeHistoryRecords(
+      [],
+      [newItem, ...history.filter(item => item.ownerUid === newItem.ownerUid)],
+      newItem.ownerUid,
+    );
+    await writeStoredHistory([...ownerItems, ...otherOwners]);
+    return ownerItems.find(item => item.id === newItem.id) || newItem;
   } catch (e) {
     console.error('History save error', e);
     return null;
   }
-}
-
-export async function updateFortuneInHistory(id, updates, ownerUid = null) {
-  if (!id || !updates || typeof updates !== 'object') return null;
-  const history = await getStoredHistory();
-  const index = history.findIndex(item =>
-    String(item?.id || '') === String(id) &&
-    (ownerUid ? item?.ownerUid === ownerUid : !item?.ownerUid)
-  );
-  if (index < 0) return null;
-
-  const safeUpdates = {
-    reflection: String(updates.reflection || '').trim().slice(0, 500),
-    reaction: ['keep', 'act', 'release'].includes(updates.reaction)
-      ? updates.reaction
-      : '',
-    reflectedAt: updates.reflectedAt || new Date().toISOString(),
-  };
-  history[index] = { ...history[index], ...safeUpdates };
-  await writeStoredHistory(history);
-  return history[index];
 }
 
 export async function mergeHistoryFromCloud(cloudItems, ownerUid) {
@@ -131,30 +223,12 @@ export async function mergeHistoryFromCloud(cloudItems, ownerUid) {
   const claimedLocal = stored.map(item =>
     item.ownerUid ? item : { ...item, ownerUid }
   );
-  const normalizedCloud = (Array.isArray(cloudItems) ? cloudItems : []).map(item => ({
-    ...item,
-    id: item.id || item.cloudId || `${Date.now()}_${Math.random().toString(36).slice(2)}`,
-    cloudId: item.cloudId || item.id || null,
-    ownerUid,
-  }));
-
   const otherAccounts = claimedLocal.filter(item => item.ownerUid !== ownerUid);
-  const candidates = [
-    ...normalizedCloud,
-    ...claimedLocal.filter(item => item.ownerUid === ownerUid),
-  ].sort(newestFirst);
-  const seenIds = new Set();
-  const seenFingerprints = new Set();
-  const mergedOwnerHistory = candidates.filter(item => {
-    const id = String(item.cloudId || item.id || '');
-    const fingerprint = historyFingerprint(item);
-    if ((id && seenIds.has(id)) || (fingerprint && seenFingerprints.has(fingerprint))) {
-      return false;
-    }
-    if (id) seenIds.add(id);
-    if (fingerprint) seenFingerprints.add(fingerprint);
-    return true;
-  }).slice(0, 100);
+  const mergedOwnerHistory = mergeHistoryRecords(
+    cloudItems,
+    claimedLocal.filter(item => item.ownerUid === ownerUid),
+    ownerUid,
+  );
 
   try {
     await writeStoredHistory([...mergedOwnerHistory, ...otherAccounts]);
@@ -206,25 +280,46 @@ export async function checkAnniversaryFortunes(ownerUid = null) {
 /**
  * PROFILE STORE (Uses Preferences for lightweight key-value storage)
  */
-export async function getProfile(fallbackLanguage = 'tr') {
+function profileStorageKey(ownerUid = null) {
+  const owner = String(ownerUid || 'device')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '')
+    .slice(0, 128) || 'device';
+  return `${PROFILE_KEY_PREFIX}:${owner}`;
+}
+
+export async function getProfile(fallbackLanguage = 'tr', ownerUid = null) {
   try {
-    const { value } = await Preferences.get({ key: PROFILE_KEY });
+    const key = profileStorageKey(ownerUid);
+    let { value } = await Preferences.get({ key });
+
+    // The old key contained device-wide data. It is safe to migrate only into
+    // the anonymous/device profile; copying it into a signed-in account could
+    // leak another account's name or birth details after an account switch.
+    if (!value && !ownerUid) {
+      const legacy = await Preferences.get({ key: LEGACY_PROFILE_KEY });
+      value = legacy.value;
+      if (value) {
+        await Preferences.set({ key, value });
+        await Preferences.remove({ key: LEGACY_PROFILE_KEY }).catch(() => {});
+      }
+    }
     return value
-      ? normalizeProfile(JSON.parse(value))
+      ? normalizeProfile(JSON.parse(value), fallbackLanguage)
       : normalizeProfile({ ...DEFAULT_PROFILE, preferredLanguage: fallbackLanguage }, fallbackLanguage);
   } catch (e) {
     return normalizeProfile({ ...DEFAULT_PROFILE, preferredLanguage: fallbackLanguage }, fallbackLanguage);
   }
 }
 
-export async function saveProfile(profileData) {
+export async function saveProfile(profileData, ownerUid = null) {
   try {
     const normalizedProfile = normalizeProfile(
       profileData,
       profileData?.preferredLanguage,
     );
     await Preferences.set({
-      key: PROFILE_KEY,
+      key: profileStorageKey(ownerUid),
       value: JSON.stringify(normalizedProfile)
     });
     return normalizedProfile;

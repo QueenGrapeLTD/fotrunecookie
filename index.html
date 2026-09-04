@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="tr" class="approved-cookie-stage">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
@@ -40,23 +40,42 @@
     <!-- Top Navigation Bar (Clean & End-User Focused) -->
     <header class="top-bar">
       <div class="top-left-group">
-        <button id="btn-open-profile" class="control-btn" title="Profilim">
-          <span class="nav-icon">👤</span>
+        <button id="btn-open-profile" class="control-btn" title="Profilim" data-i18n-aria="profileNavAria" aria-label="Profilim">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 12.25a4.25 4.25 0 1 0 0-8.5 4.25 4.25 0 0 0 0 8.5Z" />
+            <path d="M4.75 20.25c.62-3.25 3.27-5.25 7.25-5.25s6.63 2 7.25 5.25" />
+          </svg>
         </button>
-        <button id="btn-open-history" class="control-btn" title="Geçmiş Şans Kurabiyelerim">
-          <span class="nav-icon">📜</span>
+        <button id="btn-open-history" class="control-btn" title="Geçmiş Şans Kurabiyelerim" data-i18n-aria="historyNavAria" aria-label="Geçmiş Şans Kurabiyelerim">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6.25 4.75h11.5v14.5H6.25z" />
+            <path d="M9 8h6M9 11.5h6M9 15h4" />
+          </svg>
         </button>
       </div>
 
       <div class="top-center-group">
-        <button id="btn-premium-top" class="premium-top-btn" title="Premium Paket">
-          <span>👑</span> <span class="premium-top-label" id="premium-top-label-text">Premium</span>
+        <button id="btn-premium-top" class="premium-top-btn" title="Premium Paket" data-i18n-aria="premiumNavAria" aria-label="Premium Paket">
+          <svg class="premium-crown-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m4 7 4.2 4L12 5l3.8 6L20 7l-1.45 10H5.45L4 7Z" />
+            <path d="M6 19h12" />
+          </svg>
+          <span class="premium-top-label" id="premium-top-label-text">Premium</span>
         </button>
       </div>
 
       <div class="top-right-group">
-        <button id="btn-sound-toggle" class="control-btn" title="Ses Aç/Kapat">
-          <span id="sound-icon">🔊</span>
+        <button id="btn-sound-toggle" class="control-btn" title="Ses Aç/Kapat" data-i18n-aria="soundNavAria" aria-label="Ses Aç/Kapat">
+          <span id="sound-icon" class="sound-icon" aria-hidden="true">
+            <svg class="sound-on-icon" viewBox="0 0 24 24">
+              <path d="M5 9.25h3.4L13 5.5v13l-4.6-3.75H5z" />
+              <path d="M16 9c1.45 1.65 1.45 4.35 0 6M18.5 6.5c2.8 3.05 2.8 7.95 0 11" />
+            </svg>
+            <svg class="sound-off-icon" viewBox="0 0 24 24">
+              <path d="M5 9.25h3.4L13 5.5v13l-4.6-3.75H5z" />
+              <path d="m16.5 9 4.5 6M21 9l-4.5 6" />
+            </svg>
+          </span>
         </button>
       </div>
     </header>
@@ -80,6 +99,16 @@
           <span id="premium-usage-text" class="usage-text">Premium AI aktif · Günlük 5 hak</span>
         </div>
 
+        <div class="landing-core">
+        <div class="hero-copy">
+          <h1 class="app-title" id="app-title-text">Fortune Cookie</h1>
+          <div class="magic-pill">
+            <span class="pill-sparkle-left" aria-hidden="true">✨</span>
+            <span id="pill-text">Magic awaits inside</span>
+            <span class="pill-sparkle-right" aria-hidden="true">💫</span>
+          </div>
+        </div>
+
         <!-- Elegant 3D Fortune Cookie Hero -->
         <div class="cookie-hero">
           <div class="cookie-glow"></div>
@@ -88,7 +117,11 @@
           <canvas id="crumb-canvas" class="crumb-canvas" width="300" height="240"></canvas>
           
           <div id="cookie-interactive" class="cookie-wrapper" tabIndex="0" role="button" aria-label="Şans kurabiyesini kırmak için tıklayın">
-            
+            <div class="premium-cookie-art" aria-hidden="true">
+              <img class="premium-cookie-frame premium-cookie-frame-idle" src="/cookie-premium-idle-v2.png" alt="" />
+              <img class="premium-cookie-frame premium-cookie-frame-crack" src="/cookie-premium-crack-v2.png" alt="" />
+              <img class="premium-cookie-frame premium-cookie-frame-open" src="/cookie-premium-open-v2.png" alt="" />
+            </div>
             <!-- Real Photorealistic Fortune Cookie Image Container -->
             <div id="real-cookie-wrapper" class="real-cookie-wrapper">
               <img id="wing-left" class="cookie-half cookie-left" src="/cookie_left.png" alt="Şans Kurabiyesi Sol Yarısı" />
@@ -120,20 +153,16 @@
             </div>
 
             <!-- Sparkles Around Cookie -->
-            <div class="cookie-sparkles">
+            <div class="cookie-sparkles" aria-hidden="true">
               <span class="c-star s1">✦</span>
               <span class="c-star s2">✨</span>
               <span class="c-star s3">✦</span>
               <span class="c-star s4">✧</span>
             </div>
-            <div class="crack-progress" aria-hidden="true">
-              <span></span><span></span><span></span>
-            </div>
           </div>
         </div>
 
-        <h1 class="app-title" id="app-title-text">Fortune Cookie</h1>
-        <p class="app-subtitle" id="subtitle-text">Tap the cookie to crack it open!</p>
+        <p class="app-subtitle hero-instruction" id="subtitle-text">Tap the cookie three times to open it</p>
 
         <!-- VIP AI Mode Badge Indicator -->
         <div id="vip-ai-mode-badge" class="vip-ai-mode-badge hidden">
@@ -141,20 +170,17 @@
         </div>
 
         <!-- Calm AI reading status shown while the fortune is prepared -->
-        <div id="ai-fortune-loading-badge" class="ai-fortune-loading-badge hidden">
-          <span class="reading-status-mark" aria-hidden="true">
-            <i></i><i></i><i></i>
-          </span>
-          <span class="reading-status-copy">
-            <strong id="ai-loading-primary">Kurabiyen açılıyor</strong>
-            <small id="ai-loading-secondary">Şans mesajın özenle hazırlanıyor</small>
-          </span>
+        <div class="landing-status-reserve" aria-live="polite" aria-atomic="true">
+          <div id="ai-fortune-loading-badge" class="ai-fortune-loading-badge hidden" role="status">
+            <span class="reading-status-mark" aria-hidden="true">
+              <i></i><i></i><i></i>
+            </span>
+            <span class="reading-status-copy">
+              <strong id="ai-loading-primary">Kurabiyen açılıyor</strong>
+              <small id="ai-loading-secondary">Şans mesajın özenle hazırlanıyor</small>
+            </span>
+          </div>
         </div>
-
-        <div class="magic-pill">
-          <span class="pill-sparkle-left">✨</span>
-          <span id="pill-text">Magic awaits inside</span>
-          <span class="pill-sparkle-right">💫</span>
         </div>
 
         <!-- Centered Bottom Action Button (Watch Ad) -->
@@ -198,16 +224,23 @@
             <span id="zodiac-badge-rising" class="zodiac-badge-rising"></span>
           </div>
 
-          <div class="card-icon-header">
-            <span class="card-star cs-1">✧</span>
-            <span class="card-star cs-main">✦</span>
-            <span class="card-star cs-2">✨</span>
-            <span class="card-star cs-3">✧</span>
+          <header class="result-heading">
+            <div class="card-icon-header" aria-hidden="true">
+              <span class="card-star cs-1">✧</span>
+              <span class="card-star cs-main">✦</span>
+              <span class="card-star cs-2">✨</span>
+              <span class="card-star cs-3">✧</span>
+            </div>
+            <h2 class="card-title" id="card-title-text">Your Fortune Cookie</h2>
+            <p class="result-subtitle" id="result-subtitle-text">Magic awaits inside</p>
+          </header>
+
+          <div class="result-portrait" aria-hidden="true">
+            <img src="/result-grandma-premium-v2.png" alt="" />
           </div>
 
-          <h2 class="card-title" id="card-title-text">Your Fortune Cookie</h2>
-
           <div class="quote-wrapper">
+            <span class="result-message-label" id="result-message-label">Today’s message</span>
             <blockquote class="fortune-quote" id="fortune-quote-text">
               "The greatest glory in living lies not in never falling, but in rising every time we fall."
             </blockquote>
@@ -219,25 +252,6 @@
               <!-- Rendered dynamically -->
             </div>
           </div>
-
-          <section id="reflection-ritual" class="reflection-ritual" aria-labelledby="reflection-title">
-            <div class="reflection-heading">
-              <span aria-hidden="true">🌸</span>
-              <div>
-                <h3 id="reflection-title">Bugünün yansıması</h3>
-                <p id="reflection-subtitle">Bu mesaj sende nasıl bir iz bıraktı?</p>
-              </div>
-            </div>
-            <div class="reflection-reactions" role="group" aria-label="Mesaj tepkisi">
-              <button type="button" class="reflection-reaction" data-reaction="keep">💗 <span id="reflection-keep">Yanımda taşı</span></button>
-              <button type="button" class="reflection-reaction" data-reaction="act">🌱 <span id="reflection-act">Bir adım at</span></button>
-              <button type="button" class="reflection-reaction" data-reaction="release">🍃 <span id="reflection-release">Serbest bırak</span></button>
-            </div>
-            <label id="reflection-note-label" class="reflection-note-label" for="reflection-note">Kendine kısa bir not bırak</label>
-            <textarea id="reflection-note" maxlength="500" rows="3" placeholder="Bugün bu mesaj bana…"></textarea>
-            <button type="button" id="btn-save-reflection" class="btn-save-reflection">✨ <span id="reflection-save-text">Yansımayı günlüğe kaydet</span></button>
-            <p id="reflection-saved" class="reflection-saved hidden" role="status">✓ Kişisel günlüğüne kaydedildi</p>
-          </section>
 
           <div class="action-buttons">
             <button id="btn-again" class="btn-primary">
@@ -403,14 +417,16 @@
             </div>
           </section>
 
-          <section class="profile-section profile-section-birth">
-            <div class="profile-section-heading">
+          <details class="profile-section profile-section-birth astro-personalization-details">
+            <summary class="profile-section-heading astro-personalization-summary">
               <span class="profile-section-icon">🌌</span>
               <div>
-                <h4 data-i18n="birthChartTitle">Doğum Haritası</h4>
-                <p data-i18n="birthChartDesc">Yükselen burç için tarih, saat ve doğum yeri gerekir.</p>
+                <h4 data-i18n="astroOptionalTitle">Astrolojik kişiselleştirme (isteğe bağlı)</h4>
+                <p data-i18n="astroOptionalDesc">Bu alanları boş bırakabilirsiniz.</p>
               </div>
-            </div>
+            </summary>
+
+            <div class="astro-personalization-body">
 
             <div class="profile-grid profile-grid-two">
               <div class="field-group">
@@ -419,7 +435,7 @@
               </div>
               <div class="field-group">
                 <label class="field-label" id="label-profile-birthtime" for="input-profile-birthtime">Doğum Saati</label>
-                <input type="time" id="input-profile-birthtime" class="input-text" value="12:00" />
+                <input type="time" id="input-profile-birthtime" class="input-text" />
               </div>
             </div>
 
@@ -480,12 +496,6 @@
                   <span class="rising-label" id="label-profile-rising">Yükselen Burç</span>
                   <span id="badge-calculated-rising" class="rising-badge">🌅 -</span>
                 </div>
-                <div id="ai-rising-unlock-panel" class="ai-rising-unlock-panel hidden">
-                  <p class="unlock-desc">Doğum bilgilerini tamamlayıp yükselenini hesapla.</p>
-                  <button type="button" id="btn-unlock-rising-free" class="btn-unlock-rising btn-pay">
-                    🌅 Yükselen Burcumu Hesapla
-                  </button>
-                </div>
               </div>
             </div>
 
@@ -509,7 +519,8 @@
                 </select>
               </div>
             </details>
-          </section>
+            </div>
+          </details>
 
           <section class="profile-section profile-section-focus">
             <div class="profile-section-heading compact">
@@ -566,14 +577,8 @@
         <button id="btn-close-history" class="btn-close">✕</button>
 
         <div class="modal-header">
-          <h3 id="history-title-text">My Reflection Journey</h3>
+          <h3 id="history-title-text">My Fortune Cookie History</h3>
         </div>
-
-        <section class="journey-summary" aria-label="Reflection journey summary">
-          <div><strong id="journey-total">0</strong><span id="journey-total-label">Mesaj</span></div>
-          <div><strong id="journey-reflections">0</strong><span id="journey-reflections-label">Yansıma</span></div>
-          <div><strong id="journey-streak">0</strong><span id="journey-streak-label">Günlük seri</span></div>
-        </section>
         
         <div class="history-list-container" id="history-list-container">
           <!-- History items rendered dynamically -->
@@ -694,7 +699,6 @@
             <div class="plan-note" id="plan-yearly-note">günlük yalnızca 3.3 TL</div>
             <ul class="plan-features">
               <li>🥠 <span id="feat-unlimited-1">Günlük 5 Premium AI Şans Kurabiyesi</span></li>
-              <li class="ios-astrology-only">⭐ <span id="feat-rising-1">Yükselen Burç Analizi</span></li>
               <li>🚫 <span id="feat-no-ads-1">Tamamen Reklamsız Kullanım</span></li>
               <li>📜 <span id="feat-history-1">Sınırsız Şans Kurabiyesi Geçmişi</span></li>
             </ul>
@@ -753,7 +757,7 @@
     </div>
 
     <!-- Toast Notification -->
-    <div id="toast" class="toast hidden">
+    <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true">
       <span id="toast-message">Şansın kopyalandı! ✨</span>
     </div>
   </div>

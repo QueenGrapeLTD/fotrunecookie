@@ -1,5 +1,9 @@
 import { fortunesDatabase } from './fortunesData.js';
 import { generatePersonalizedAIFortune, fetchRemoteAIPrediction, zodiacElements } from './aiEngine.js';
+import { chooseNonRepeatingFortune } from './fortuneSelection.js';
+
+const CUSTOM_FORTUNES_KEY = 'fc_custom_fortunes_db_v2';
+const RECENT_FREE_FORTUNES_PREFIX = 'fc_recent_free_fortunes_v2';
 
 export { zodiacElements, fetchRemoteAIPrediction };
 
@@ -28,7 +32,7 @@ export const categories = [
 export const fortunes = fortunesDatabase;
 
 export function getFortunesDatabase() {
-  const custom = localStorage.getItem('fc_custom_fortunes_db');
+  const custom = localStorage.getItem(CUSTOM_FORTUNES_KEY);
   if (custom) {
     try {
       return JSON.parse(custom);
@@ -38,7 +42,29 @@ export function getFortunesDatabase() {
 }
 
 export function saveFortunesDatabase(db) {
-  localStorage.setItem('fc_custom_fortunes_db', JSON.stringify(db));
+  localStorage.setItem(CUSTOM_FORTUNES_KEY, JSON.stringify(db));
+}
+
+function selectNonRepeatingFortune(categoryList, lang, category) {
+  const storageKey = `${RECENT_FREE_FORTUNES_PREFIX}:${lang}:${category}`;
+  let recent = [];
+  try {
+    const stored = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    if (Array.isArray(stored)) recent = stored.filter(item => typeof item === 'string');
+  } catch {
+    recent = [];
+  }
+
+  const selection = chooseNonRepeatingFortune(categoryList, recent);
+  try {
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify(selection.recent),
+    );
+  } catch {
+    // A constrained WebView may deny storage; fortune selection still works.
+  }
+  return selection.selected;
 }
 
 export function getRandomFortune(lang = 'tr', category = 'general', userProfile = {}) {
@@ -47,8 +73,7 @@ export function getRandomFortune(lang = 'tr', category = 'general', userProfile 
   let categoryList = langFortunes[category] || langFortunes.general || Object.values(langFortunes)[0];
 
   if (Array.isArray(categoryList) && categoryList.length > 0) {
-    const randomIndex = Math.floor(Math.random() * categoryList.length);
-    const baseFortune = categoryList[randomIndex];
+    const baseFortune = selectNonRepeatingFortune(categoryList, lang, category);
     return generatePersonalizedAIFortune(userProfile, lang, baseFortune);
   }
 
@@ -59,7 +84,7 @@ export const uiText = {
   tr: {
     appTitle: "Şans Kurabiyesi AI",
     paperText: "✨ ŞANS KURABİYESİ",
-    subtitle: "Şans kurabiyesini kırmak için dokunun!",
+    subtitle: "Şans kurabiyesini açmak için üç kez dokun",
     pillText: "Sihir içeride seni bekliyor",
     cardTitle: "Senin Şans Kurabiyen",
     luckyTitle: "Günün Şanslı Sayıları",
@@ -105,7 +130,6 @@ export const uiText = {
     planMonthlyTitle: "Aylık Plan",
     planMonthlyPeriod: "/ay",
     featUnlimited: "Günlük 5 Premium AI Şans Kurabiyesi",
-    featRising: "Yükselen Burç Analizi",
     featNoAds: "Tamamen Reklamsız Kullanım",
     featHistory: "Sınırsız Şans Kurabiyesi Geçmişi",
     btnBuyYearly: "Aboneliği Başlat (99 TL/ay)",
@@ -119,7 +143,7 @@ export const uiText = {
   en: {
     appTitle: "Fortune Cookie AI",
     paperText: "✨ FORTUNE COOKIE",
-    subtitle: "Tap the cookie to crack it open!",
+    subtitle: "Tap the cookie three times to open it",
     pillText: "Magic awaits inside",
     cardTitle: "Your Fortune Cookie",
     luckyTitle: "Your Lucky Numbers",
@@ -165,7 +189,6 @@ export const uiText = {
     planMonthlyTitle: "Monthly Plan",
     planMonthlyPeriod: "/mo",
     featUnlimited: "5 Premium AI Fortune Cookies Daily",
-    featRising: "Rising Sign Analysis",
     featNoAds: "100% Ad-Free Experience",
     featHistory: "Full Fortune History",
     btnBuyYearly: "Start VIP Pass ($2.99/mo)",
@@ -178,7 +201,7 @@ export const uiText = {
   },
   de: {
     appTitle: "Glückskeks AI",
-    subtitle: "Tippe auf den Keks, um ihn zu öffnen!",
+    subtitle: "Tippe dreimal, um den Keks zu öffnen",
     pillText: "Magie wartet im Inneren",
     cardTitle: "Dein Glücksspruch",
     luckyTitle: "Deine Glückszahlen",
@@ -224,7 +247,6 @@ export const uiText = {
     planMonthlyTitle: "Monats-Abo",
     planMonthlyPeriod: "/Monat",
     featUnlimited: "Unbegrenzte KI-Orakel",
-    featRising: "Aszendenten-Analyse",
     featNoAds: "Werbefreies Erlebnis",
     featHistory: "Vollständiger Verlauf",
     btnBuyYearly: "Jetzt Starten",
@@ -236,7 +258,7 @@ export const uiText = {
   },
   fr: {
     appTitle: "Biscuit de Fortune AI",
-    subtitle: "Appuyez sur le biscuit pour l'ouvrir!",
+    subtitle: "Touchez trois fois pour ouvrir le biscuit",
     pillText: "La magie vous attend à l'intérieur",
     cardTitle: "Votre Prédiction",
     luckyTitle: "Vos Numéros Chanceux",
@@ -282,7 +304,6 @@ export const uiText = {
     planMonthlyTitle: "Plan Mensuel",
     planMonthlyPeriod: "/mois",
     featUnlimited: "Oracle IA Illimité",
-    featRising: "Analyse de l'Ascendant",
     featNoAds: "Expérience Sans Pub",
     featHistory: "Historique Complet",
     btnBuyYearly: "Commencer",
@@ -294,7 +315,7 @@ export const uiText = {
   },
   es: {
     appTitle: "Galleta de la Fortuna AI",
-    subtitle: "¡Toca la galleta para abrirla!",
+    subtitle: "Toca tres veces para abrir la galleta",
     pillText: "La magia te espera adentro",
     cardTitle: "Tu Fortuna",
     luckyTitle: "Números de la Suerte",
@@ -340,7 +361,6 @@ export const uiText = {
     planMonthlyTitle: "Plan Mensual",
     planMonthlyPeriod: "/mes",
     featUnlimited: "Fortunas IA Ilimitadas",
-    featRising: "Análisis de Ascendente",
     featNoAds: "Experiencia Sin Anuncios",
     featHistory: "Historial Completo",
     btnBuyYearly: "Empezar Ahora",
@@ -352,7 +372,7 @@ export const uiText = {
   },
   it: {
     appTitle: "Biscotto della Fortuna AI",
-    subtitle: "Tocca il biscotto per aprirlo!",
+    subtitle: "Tocca tre volte per aprire il biscotto",
     pillText: "La magia ti aspetta all'interno",
     cardTitle: "La Tua Fortuna",
     luckyTitle: "I Tuoi Numeri Fortunati",
@@ -398,7 +418,6 @@ export const uiText = {
     planMonthlyTitle: "Piano Mensile",
     planMonthlyPeriod: "/mese",
     featUnlimited: "Oracoli IA Illimitati",
-    featRising: "Analisi dell'Ascendente",
     featNoAds: "Esperienza Senza Pubblicità",
     featHistory: "Cronologia Completa",
     btnBuyYearly: "Inizia Ora",
@@ -410,7 +429,7 @@ export const uiText = {
   },
   el: {
     appTitle: "Μπισκότο Τύχης AI",
-    subtitle: "Πατήστε το μπισκότο για να το ανοίξετε!",
+    subtitle: "Αγγίξτε τρεις φορές για να ανοίξει το μπισκότο",
     pillText: "Η μαγεία σας περιμένει μέσα",
     cardTitle: "Η Τύχη Σας",
     luckyTitle: "Οι Τυχεροί Σας Αριθμοί",
@@ -456,7 +475,6 @@ export const uiText = {
     planMonthlyTitle: "Μηνιαίο Σχέδιο",
     planMonthlyPeriod: "/μήνα",
     featUnlimited: "Απεριόριστες Προβλέψεις AI",
-    featRising: "Ανάλυση Ωροσκόπου",
     featNoAds: "Εμπειρία Χωρίς Διαφημίσεις",
     featHistory: "Πλήρες Ιστορικό",
     btnBuyYearly: "Ξεκινήστε Τώρα",
@@ -468,7 +486,7 @@ export const uiText = {
   },
   zh: {
     appTitle: "幸运饼干 AI",
-    subtitle: "点击饼干，开启幸运！",
+    subtitle: "轻触三次，开启幸运饼干",
     pillText: "魔法就在其中",
     cardTitle: "你的专属签语",
     luckyTitle: "幸运数字",
@@ -514,7 +532,6 @@ export const uiText = {
     planMonthlyTitle: "月度方案",
     planMonthlyPeriod: "/月",
     featUnlimited: "无限 AI 签语解读",
-    featRising: "上升星座深度解析",
     featNoAds: "纯净无广告体验",
     featHistory: "完整历史签语记录",
     btnBuyYearly: "立即开启",
@@ -526,7 +543,7 @@ export const uiText = {
   },
   ja: {
     appTitle: "フォーチュンクッキー AI",
-    subtitle: "クッキーをタップして開こう！",
+    subtitle: "3回タップしてクッキーを開こう",
     pillText: "中に魔法が待っています",
     cardTitle: "あなたの運勢",
     luckyTitle: "本日のラッキーナンバー",
@@ -572,7 +589,6 @@ export const uiText = {
     planMonthlyTitle: "月額プラン",
     planMonthlyPeriod: "/月",
     featUnlimited: "無制限AIおみくじ",
-    featRising: "アセンダント深度分析",
     featNoAds: "広告なしで快適",
     featHistory: "全おみくじ履歴",
     btnBuyYearly: "今すぐ始める",
@@ -584,7 +600,7 @@ export const uiText = {
   },
   ko: {
     appTitle: "포춘쿠키 AI",
-    subtitle: "쿠키를 터치하여 열어보세요!",
+    subtitle: "세 번 탭해서 쿠키를 열어보세요",
     pillText: "마법이 당신을 기다립니다",
     cardTitle: "오늘의 운세",
     luckyTitle: "오늘의 행운의 숫자",
@@ -630,7 +646,6 @@ export const uiText = {
     planMonthlyTitle: "월간 플랜",
     planMonthlyPeriod: "/월",
     featUnlimited: "무제한 AI 운세",
-    featRising: "상승궁 상세 분석",
     featNoAds: "광고 없는 클린 체험",
     featHistory: "전체 운세 히스토리",
     btnBuyYearly: "지금 시작하기",
