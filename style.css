@@ -2249,12 +2249,6 @@ html.app-status-visible {
   --status-layout-reserve: var(--status-rail-reserve);
 }
 
-html.platform-ios .profile-section-birth,
-html.platform-ios #user-profile-badge .badge-rising-tag,
-html.platform-ios #user-profile-badge #badge-user-zodiac,
-html.platform-ios #zodiac-active-badge { display: none !important; }
-html.platform-ios .ios-astrology-only { display: none !important; }
-
 html.native-ad-banner-visible #app {
   padding-bottom: calc(
     16px + var(--native-ad-reserve) + var(--safe-area-bottom)
@@ -3300,52 +3294,6 @@ html.platform-android .social-btn-apple {
   width: 100%;
 }
 
-.ai-rising-unlock-panel {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px dashed rgba(168, 85, 247, 0.3);
-  width: 100%;
-}
-
-.unlock-desc {
-  font-size: 0.78rem;
-  color: #6B21A8;
-  font-weight: 700;
-  margin-bottom: 8px;
-  text-align: center;
-}
-
-.unlock-btn-row {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-}
-
-.btn-unlock-rising {
-  flex: 1;
-  padding: 8px;
-  border-radius: 10px;
-  font-size: 0.74rem;
-  font-weight: 800;
-  border: none;
-  cursor: pointer;
-  transition: transform 0.2s ease;
-}
-
-.btn-unlock-rising:active { transform: scale(0.97); }
-
-.btn-unlock-rising.btn-ad {
-  background: #FEF3C7;
-  color: #B45309;
-  border: 1px solid #FDE68A;
-}
-
-.btn-unlock-rising.btn-pay {
-  background: linear-gradient(135deg, #9333EA, #7E22CE);
-  color: #FFFFFF;
-  box-shadow: 0 4px 12px rgba(147, 51, 234, 0.25);
-}
-
 /* ============================================================
    PROFILE EXPERIENCE
    ============================================================ */
@@ -3422,6 +3370,38 @@ html.platform-android .social-btn-apple {
   color: #8a6a48;
   font-size: 0.76rem;
   line-height: 1.35;
+}
+
+.astro-personalization-summary {
+  position: relative;
+  margin-bottom: 0;
+  padding-right: 28px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.astro-personalization-summary::-webkit-details-marker {
+  display: none;
+}
+
+.astro-personalization-summary::after {
+  content: '⌄';
+  position: absolute;
+  right: 2px;
+  color: #8a6a48;
+  font-size: 1.1rem;
+  transition: transform 0.18s ease;
+}
+
+.astro-personalization-details[open] > .astro-personalization-summary::after {
+  transform: rotate(180deg);
+}
+
+.astro-personalization-body {
+  display: grid;
+  gap: 12px;
+  margin-top: 15px;
 }
 
 .profile-grid {
@@ -3557,11 +3537,6 @@ html.platform-android .social-btn-apple {
 
 .sign-result-grid .rising-sign-box.rising-sign-theme {
   justify-content: center;
-}
-
-.sign-result-grid .ai-rising-unlock-panel {
-  margin-top: 8px;
-  padding-top: 8px;
 }
 
 .manual-rising-details {

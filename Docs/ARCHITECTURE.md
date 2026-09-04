@@ -22,7 +22,7 @@ No OpenAI runtime integration was found. A stale CSP permission for `api.openai.
 - `firebaseService.js`: single client Firebase initialization and client/backend contracts.
 - `functions/index.js`: callable backend, entitlements, idempotency, AI generation, server history, and admin endpoints.
 - `historyStore.js`: authoritative on-device history and merge logic.
-- `astrologyCalc.js` + `zodiacData.js`: client astrology calculation.
+- `astrologyCalc.js` + `zodiacData.js`: optional client-side Sun/rising calculation. The profile owns explicit opt-in and manual/calculated rising provenance; only derived sign IDs and timezone ID may cross the AI boundary.
 - `i18n.js`, `languageGuard.js`, `functions/fortuneLocales.js`, and `functions/fortuneLanguage.js`: UI and generation-language support.
 
 ## Architectural assessment
@@ -33,5 +33,6 @@ Firebase is initialized once per runtime; duplicate initialization was not found
 - User-visible registered history now comes only from canonical `requestId` documents; internal AI novelty memory is private.
 - Zodiac catalogs exist independently in UI, astrology, and backend code and have drifted.
 - Explicit language selection now persists immediately with a sequence-protected precedence contract over older hydration.
+- Optional astrology has one cross-platform consent boundary: missing or false opt-in produces empty astrology wire fields and ordinary AI generation; true opt-in permits only derived Sun/rising IDs plus timezone. Raw birth/location inputs and full natal-chart data stay outside the model request.
 
 The recovery should keep the current monolithic frontend and Firebase backend. No microservice or framework migration is justified.

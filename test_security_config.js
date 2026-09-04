@@ -51,6 +51,51 @@ test("Firestore profile identity is bound to the verified auth token", () => {
   assert.doesNotMatch(updateAllowlist, /'authProvider'/);
 });
 
+test("Firestore profile rules allow only explicit astrology provenance", () => {
+  const createAllowlist = rulesSource.slice(
+    rulesSource.indexOf("function validUserCreate"),
+    rulesSource.indexOf("function validUserUpdate"),
+  );
+  const updateAllowlist = rulesSource.slice(
+    rulesSource.indexOf("function validUserUpdate"),
+    rulesSource.indexOf("function validProfileData"),
+  );
+  const validation = rulesSource.slice(
+    rulesSource.indexOf("function validProfileData"),
+    rulesSource.indexOf("function validFortuneData"),
+  );
+
+  for (const allowlist of [createAllowlist, updateAllowlist]) {
+    assert.match(allowlist, /'astrologyOptIn'/);
+    assert.match(allowlist, /'risingSource'/);
+  }
+  assert.match(validation, /request\.resource\.data\.astrologyOptIn is bool/);
+  assert.match(validation, /request\.resource\.data\.risingSource is string/);
+  assert.match(validation, /risingSource == ''/);
+  assert.match(validation, /risingSource == 'manual'/);
+  assert.match(validation, /risingSource == 'calculated'/);
+});
+
+test("profile sync persists astrology consent and rising provenance", () => {
+  const syncKeys = authSource.slice(
+    authSource.indexOf("const PROFILE_SYNC_KEYS"),
+    authSource.indexOf("function profilePayloadMatches"),
+  );
+  const profilePayload = authSource.slice(
+    authSource.indexOf("function getProfilePayload"),
+    authSource.indexOf("function cachedProfileMatchesUser"),
+  );
+
+  for (const field of ["astrologyOptIn", "risingSource"]) {
+    assert.match(syncKeys, new RegExp(`"${field}"`));
+    assert.match(
+      profilePayload,
+      new RegExp(`${field}: profileValue\\(profileData, cloudData, "${field}"\\)`),
+    );
+    assert.match(profilePayload, new RegExp(`${field}: candidate\\.${field}`));
+  }
+});
+
 test("public settings cannot be written directly or leak the admin UID", () => {
   assert.match(
     rulesSource,

@@ -32,6 +32,7 @@ service cloud.firestore {
           'authProvider', 'emailVerified', 'birthdate', 'birthtime',
           'birthplace', 'birthCountry', 'birthCity', 'birthRegion', 'timezoneId',
           'risingSign', 'zodiac', 'latitude', 'longitude', 'timezoneOffset',
+          'astrologyOptIn', 'risingSource',
           'category', 'categories', 'preferredLanguage', 'profileUpdatedAt',
           'lastLogin', 'createdAt'
         ])
@@ -46,6 +47,7 @@ service cloud.firestore {
         'birthdate', 'birthtime',
         'birthplace', 'birthCountry', 'birthCity', 'birthRegion', 'timezoneId',
         'risingSign', 'zodiac', 'latitude', 'longitude', 'timezoneOffset',
+        'astrologyOptIn', 'risingSource',
         'category', 'categories', 'preferredLanguage', 'profileUpdatedAt',
         'lastLogin'
       ]) && validProfileData();
@@ -87,6 +89,13 @@ service cloud.firestore {
         && request.resource.data.risingSign.size() <= 20
         && request.resource.data.zodiac is string
         && request.resource.data.zodiac.size() <= 20
+        && (!request.resource.data.keys().hasAny(['astrologyOptIn'])
+          || request.resource.data.astrologyOptIn is bool)
+        && (!request.resource.data.keys().hasAny(['risingSource'])
+          || (request.resource.data.risingSource is string
+            && (request.resource.data.risingSource == ''
+              || request.resource.data.risingSource == 'manual'
+              || request.resource.data.risingSource == 'calculated')))
         && request.resource.data.category is string
         && (request.resource.data.category == 'general'
           || request.resource.data.category == 'love'

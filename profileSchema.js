@@ -33,10 +33,16 @@ const ZODIAC_SIGNS = new Set([
   'pisces',
 ]);
 
+const RISING_SOURCES = new Set([
+  '',
+  'manual',
+  'calculated',
+]);
+
 export const DEFAULT_PROFILE = Object.freeze({
   name: '',
   birthdate: '',
-  birthtime: '12:00',
+  birthtime: '',
   birthplace: '',
   birthCountry: '',
   birthCity: '',
@@ -47,6 +53,8 @@ export const DEFAULT_PROFILE = Object.freeze({
   timezoneOffset: null,
   zodiac: '',
   risingSign: '',
+  astrologyOptIn: false,
+  risingSource: '',
   category: 'general',
   categories: ['general'],
   preferredLanguage: 'tr',
@@ -75,12 +83,17 @@ function validDate(value) {
 
 function validTime(value) {
   const text = cleanString(value, 5);
-  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(text) ? text : '12:00';
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(text) ? text : '';
 }
 
 function validSign(value) {
   const sign = cleanString(value, 20).toLowerCase();
   return ZODIAC_SIGNS.has(sign) ? sign : '';
+}
+
+function validRisingSource(value) {
+  const source = cleanString(value, 10).toLowerCase();
+  return RISING_SOURCES.has(source) ? source : '';
 }
 
 export function normalizeProfile(profile = {}, fallbackLanguage = 'tr') {
@@ -110,6 +123,8 @@ export function normalizeProfile(profile = {}, fallbackLanguage = 'tr') {
     timezoneOffset: boundedNumber(profile.timezoneOffset, -12, 14),
     zodiac: validSign(profile.zodiac),
     risingSign: validSign(profile.risingSign),
+    astrologyOptIn: profile.astrologyOptIn === true,
+    risingSource: validRisingSource(profile.risingSource),
     category,
     categories: [category],
     preferredLanguage: PROFILE_LANGUAGES.includes(requestedLanguage)

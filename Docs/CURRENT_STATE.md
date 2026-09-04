@@ -8,7 +8,7 @@ Updated: 2026-09-04.
 - Active displayed-result paths: 2.
 - End-user generator bodies including dead legacy: 3.
 - Total generation workflows including admin drafting: 4.
-- Remote AI fields: sanitized optional name, zodiac, rising sign, category, timezone ID, language, and request ID; raw birth/location data are omitted.
+- Remote AI fields always include sanitized optional name, category, language, and request ID. Astrology is opt-in: without explicit opt-in, zodiac, rising sign, and timezone ID are sent as empty strings and normal non-astrological AI generation continues; with opt-in, only derived Sun sign, derived or manually selected rising sign, and timezone ID are added. Raw birth/location fields are never sent.
 - Language: used during generation, immediately persisted, protected against stale hydration, and behaviorally guarded for all ten supported locales.
 - Firebase initialization: one client instance and one Functions runtime instance; no duplicate initialization found.
 - Confirmed audit P0/P1 recovery groups: implemented and documented in `AUDIT_REPORT.md`.
@@ -37,10 +37,19 @@ Warnings: the physical verified-premium phone was not visible to ADB during fina
 ## Premium AI quality and recovery — 2026-09-04
 
 - Physical device `25010PN30G` running Play release `1.0.27` (`versionCode 29`) reproduced a successful but slow, personality-analysis-like fortune before the fix, then reproduced two-candidate local rejection after the first bounded deployment.
-- Production logs proved the failure was deterministic validation exhaustion rather than a model timeout: one candidate exceeded the 80-character card limit by two characters and the other matched a stale mystical cliché.
-- The final prompt targets 68 characters while the authoritative card validator remains 80. Prompt and judge share hopeful possibility, lucky observation and playful recognition archetypes; stock positive-word matching and forced name insertion are no longer delivery requirements.
-- Generation is bounded to two attempts with 8-second generation and 4-second judge deadlines. Premium client retries retain one context-bound request ID across retryable failures; free/rewarded routing is unchanged.
+- Production logs from the initial bounded revision proved the failure was deterministic validation exhaustion rather than a model timeout: one candidate exceeded the then-active 80-character card limit by two characters and the other matched a stale mystical cliché.
+- The current prompt targets a natural fortune of up to 160 Unicode characters, without padding shorter complete fortunes; the authoritative delivery validator accepts up to 200 Unicode characters. Prompt and judge share hopeful possibility, lucky observation and playful recognition archetypes; stock positive-word matching and forced name insertion are not delivery requirements.
+- Generation is bounded to three attempts with 8-second generation and 4-second judge deadlines (36 seconds maximum, below the 42-second client and 45-second callable limits). Premium client retries retain one context-bound request ID across retryable failures; free/rewarded routing is unchanged.
 - `generateFortune` was deployed to production and is active. The final physical-device call completed on its first candidate and displayed: “Bir yabancının içten selamı, eski bir dostluk kapısını aralayabilir.”
 - Root tests: 126/126. Functions tests: 13/13. Production web build, hosting build, mobile configuration check, App Store blocker check, signed Android release APK build, and independent QA all pass.
 
 Warning: the signed local APK cannot replace the Play-installed app because Google Play app signing and the local upload key differ. The failed replacement left the installed app and its data intact. The client-side retry improvement therefore requires a new Play-distributed build; the server-side quality and timeout fixes are already live for the installed release.
+
+## Optional astrology contract — 2026-09-05
+
+- The profile's astrological-personalization section is collapsed by default and explicitly labeled optional on Android, iOS, and web.
+- `astrologyOptIn` defaults to `false`. Empty profiles and legacy records without the exact boolean opt-in remain non-astrological even if legacy zodiac fields exist.
+- Explicit participation derives the Sun sign from a valid birth date. A rising sign is either calculated from complete birth date/time/location inputs or explicitly selected; `risingSource` preserves `calculated` or `manual` provenance in the profile.
+- The AI wire boundary sends only the derived Sun sign, rising sign, and timezone ID when opted in. Birth date/time, birthplace, country/city/region, coordinates, timezone offset, and `risingSource` remain off the generation wire.
+- iOS follows the same opt-in contract as Android and web; there is no platform-specific astrology stripping.
+- This is lightweight thematic personalization, not a full natal chart: houses, degrees, aspects, Moon sign, planetary positions, and transits do not reach the active prompt.

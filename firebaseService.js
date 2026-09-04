@@ -279,6 +279,8 @@ const PROFILE_SYNC_KEYS = [
   "timezoneId",
   "risingSign",
   "zodiac",
+  "astrologyOptIn",
+  "risingSource",
   "latitude",
   "longitude",
   "timezoneOffset",
@@ -321,6 +323,8 @@ function getProfilePayload(user, profileData = {}, cloudData = {}) {
     timezoneId: profileValue(profileData, cloudData, "timezoneId"),
     risingSign: profileValue(profileData, cloudData, "risingSign"),
     zodiac: profileValue(profileData, cloudData, "zodiac"),
+    astrologyOptIn: profileValue(profileData, cloudData, "astrologyOptIn"),
+    risingSource: profileValue(profileData, cloudData, "risingSource"),
     latitude: profileValue(profileData, cloudData, "latitude"),
     longitude: profileValue(profileData, cloudData, "longitude"),
     timezoneOffset: profileValue(profileData, cloudData, "timezoneOffset"),
@@ -362,6 +366,8 @@ function getProfilePayload(user, profileData = {}, cloudData = {}) {
     timezoneId: candidate.timezoneId,
     risingSign: candidate.risingSign,
     zodiac: candidate.zodiac,
+    astrologyOptIn: candidate.astrologyOptIn,
+    risingSource: candidate.risingSource,
     latitude: candidate.latitude,
     longitude: candidate.longitude,
     timezoneOffset: candidate.timezoneOffset,
@@ -412,10 +418,16 @@ export async function callGenerateFortuneCloudFunction(
     const invocation = callable({
       profile: {
         name: sanitizeFortuneName(profile.name),
-        zodiac: cleanString(profile.zodiac, 20),
-        risingSign: cleanString(profile.risingSign, 20),
+        zodiac: profile.astrologyOptIn === true
+          ? cleanString(profile.zodiac, 20)
+          : "",
+        risingSign: profile.astrologyOptIn === true
+          ? cleanString(profile.risingSign, 20)
+          : "",
         category: cleanString(profile.category || "general", 20),
-        timezoneId: cleanString(profile.timezoneId, 64),
+        timezoneId: profile.astrologyOptIn === true
+          ? cleanString(profile.timezoneId, 64)
+          : "",
       },
       lang: requestedLanguage,
       requestId,

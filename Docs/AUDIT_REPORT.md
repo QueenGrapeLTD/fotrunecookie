@@ -29,7 +29,7 @@ Both assign the displayed text only at `main.js:fortuneQuoteText.textContent`.
 
 ## Exact answer: data reaching AI
 
-Remote AI receives a sanitized optional name, zodiac, rising sign, category, timezone ID, selected language, and request ID. It does not receive raw birth/location inputs. The server adds private novelty history, local date, recipe, and a UID/request variation key.
+Remote AI always receives a sanitized optional name, category, selected language, and request ID. Astrology is governed by the exact boolean `astrologyOptIn`: when it is not true, zodiac, rising sign, and timezone ID cross the wire only as empty strings and the normal AI path remains available. When it is true, the wire may additionally contain the locally derived Sun sign, derived or manually selected rising sign, and timezone ID. It never receives raw birth date/time, birthplace, country/city/region, coordinates, timezone offset, or rising provenance. The server adds private novelty history, local date, recipe, and a UID/request variation key.
 
 ## Exact answer: language
 
@@ -37,7 +37,7 @@ Language is used during both curated selection and AI prompt construction. It is
 
 ## Baseline P1 findings and recovery status
 
-1. Resolved: missing zodiac is neutral; iOS no longer receives hidden Aries context.
+1. Resolved: astrology is optional and neutral by default. Missing/invalid data or absent opt-in never defaults to Aries and does not block ordinary AI generation; Android, iOS, and web use the same wire gate.
 2. Resolved: optional sanitized name reaches the model as inert data; output may omit it and server/client validation permits the exact value at most once.
 3. Resolved: immutable auth/language/profile request context prevents cross-owner or stale-context persistence.
 4. Resolved: authenticated generation waits for owner-specific force-fresh hydration.
@@ -49,6 +49,7 @@ Language is used during both curated selection and AI prompt construction. It is
 10. Superseded: the reflection journal UI and its write path were removed; legacy fields remain compatible and stale history IDs are no longer exposed to a reflection action.
 11. Resolved for audited blockers: ten-language guards, placeholder rejection, accident/death safety, exact optional-name use, and rewarded novelty memory are deterministic contracts.
 12. Resolved: client curated data has exact 160-message source parity.
+13. Resolved: rising-sign provenance is explicit (`manual` or `calculated`); legacy records without `astrologyOptIn: true` do not silently participate. The active prompt receives only lightweight Sun/rising themes, not a full natal chart.
 
 Web CSP birthplace resolution and partial completion ordering were resolved. The profile identity-field/rules transition mismatch remains an integration-test candidate. Real-model cultural naturalness and physical-device runtime behavior remain unverified without live evaluation.
 

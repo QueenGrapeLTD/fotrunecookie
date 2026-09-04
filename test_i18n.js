@@ -20,7 +20,7 @@ assert.equal(translate('ja', 'usage', { used: 2, limit: 10, remaining: 8 }).incl
 
 const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
 for (const key of [
-  'bootstrapTitle', 'deleteTitle', 'profilePersonalTitle', 'birthChartTitle',
+  'bootstrapTitle', 'deleteTitle', 'profilePersonalTitle', 'astroOptionalTitle', 'astroOptionalDesc',
   'birthplace', 'country', 'city', 'region', 'resolveLocation', 'focusTitle'
 ]) {
   assert.match(html, new RegExp(`data-i18n="${key}"`));

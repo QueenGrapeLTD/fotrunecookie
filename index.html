@@ -417,14 +417,16 @@
             </div>
           </section>
 
-          <section class="profile-section profile-section-birth">
-            <div class="profile-section-heading">
+          <details class="profile-section profile-section-birth astro-personalization-details">
+            <summary class="profile-section-heading astro-personalization-summary">
               <span class="profile-section-icon">🌌</span>
               <div>
-                <h4 data-i18n="birthChartTitle">Doğum Haritası</h4>
-                <p data-i18n="birthChartDesc">Yükselen burç için tarih, saat ve doğum yeri gerekir.</p>
+                <h4 data-i18n="astroOptionalTitle">Astrolojik kişiselleştirme (isteğe bağlı)</h4>
+                <p data-i18n="astroOptionalDesc">Bu alanları boş bırakabilirsiniz.</p>
               </div>
-            </div>
+            </summary>
+
+            <div class="astro-personalization-body">
 
             <div class="profile-grid profile-grid-two">
               <div class="field-group">
@@ -433,7 +435,7 @@
               </div>
               <div class="field-group">
                 <label class="field-label" id="label-profile-birthtime" for="input-profile-birthtime">Doğum Saati</label>
-                <input type="time" id="input-profile-birthtime" class="input-text" value="12:00" />
+                <input type="time" id="input-profile-birthtime" class="input-text" />
               </div>
             </div>
 
@@ -494,12 +496,6 @@
                   <span class="rising-label" id="label-profile-rising">Yükselen Burç</span>
                   <span id="badge-calculated-rising" class="rising-badge">🌅 -</span>
                 </div>
-                <div id="ai-rising-unlock-panel" class="ai-rising-unlock-panel hidden">
-                  <p class="unlock-desc">Doğum bilgilerini tamamlayıp yükselenini hesapla.</p>
-                  <button type="button" id="btn-unlock-rising-free" class="btn-unlock-rising btn-pay">
-                    🌅 Yükselen Burcumu Hesapla
-                  </button>
-                </div>
               </div>
             </div>
 
@@ -523,7 +519,8 @@
                 </select>
               </div>
             </details>
-          </section>
+            </div>
+          </details>
 
           <section class="profile-section profile-section-focus">
             <div class="profile-section-heading compact">
@@ -702,7 +699,6 @@
             <div class="plan-note" id="plan-yearly-note">günlük yalnızca 3.3 TL</div>
             <ul class="plan-features">
               <li>🥠 <span id="feat-unlimited-1">Günlük 5 Premium AI Şans Kurabiyesi</span></li>
-              <li class="ios-astrology-only">⭐ <span id="feat-rising-1">Yükselen Burç Analizi</span></li>
               <li>🚫 <span id="feat-no-ads-1">Tamamen Reklamsız Kullanım</span></li>
               <li>📜 <span id="feat-history-1">Sınırsız Şans Kurabiyesi Geçmişi</span></li>
             </ul>

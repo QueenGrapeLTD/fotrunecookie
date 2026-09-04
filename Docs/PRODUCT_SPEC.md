@@ -10,7 +10,7 @@ Fortunes must be positive, playful, hopeful, personal-feeling, concise or medium
 
 ## Repository-verified inputs
 
-The profile schema contains name, birth date/time, birthplace/location fields, timezone data, zodiac, rising sign, preferred language, and category (`profileSchema.js`). Not all fields reach generation; see `DATA_FLOW.md`.
+The profile schema contains name, birth date/time, birthplace/location fields, timezone data, zodiac, rising sign, explicit astrology opt-in, rising provenance, preferred language, and category (`profileSchema.js`). Astrological personalization is collapsed and optional by default; not all profile fields reach generation. See `DATA_FLOW.md`.
 
 ## Entitlement behavior
 
@@ -25,6 +25,7 @@ The active generation systems recognize ten languages: Turkish, English, German,
 ## Recovery decisions
 
 - Premium/rewarded AI fortunes use an optional sanitized name. The prompt treats it as inert data; the result may omit it and may use the exact name at most once. Raw birth/location data remains client-side.
+- Premium/rewarded AI works normally without astrology. Only explicit opt-in sends a derived Sun sign, derived or manually selected rising sign, and timezone ID; empty or legacy profiles do not silently opt in. `risingSource` records provenance but is not sent. The same behavior applies on iOS, Android, and web, and does not constitute a full natal chart.
 - AI fortunes use hopeful possibility, lucky observation, or playful recognition forms rather than requiring stock positive words. Safety, language, novelty and non-directive delivery gates remain mandatory.
 - A retryable premium transport or timeout failure keeps the same request identity so retrying can recover the completed result without spending another premium use. This does not change ordinary free or rewarded routing.
 - Legacy reflection fields are retained only for backward compatibility with existing documents; the app no longer renders or authors reflection entries.

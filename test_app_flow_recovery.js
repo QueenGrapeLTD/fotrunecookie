@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { normalizeProfile } from './profileSchema.js';
 
 const main = fs.readFileSync(new URL('./main.js', import.meta.url), 'utf8');
 const firebase = fs.readFileSync(new URL('./firebaseService.js', import.meta.url), 'utf8');
@@ -41,6 +42,40 @@ test('fortune request context is immutable and stale completions cannot render o
   assert.match(main, /Eski sonuç kaydedilmedi/);
 });
 
+test('cloud profile merge preserves explicit astrology consent values and safe legacy defaults', () => {
+  const source = functionBody(main, 'mergeCloudProfile', 'renderProfileInputs');
+  const mergeCloudProfile = new Function(
+    'normalizeProfile',
+    'currentLang',
+    `${source}; return mergeCloudProfile;`,
+  )(normalizeProfile, 'tr');
+  const optedInLocal = normalizeProfile({
+    zodiac: 'scorpio',
+    risingSign: 'aries',
+    astrologyOptIn: true,
+    risingSource: 'manual',
+  });
+
+  const explicitlyDisabled = mergeCloudProfile(optedInLocal, {
+    astrologyOptIn: false,
+    risingSource: '',
+  });
+  assert.equal(explicitlyDisabled.astrologyOptIn, false);
+  assert.equal(explicitlyDisabled.risingSource, '');
+
+  const cloudAbsent = mergeCloudProfile(optedInLocal, {});
+  assert.equal(cloudAbsent.astrologyOptIn, true);
+  assert.equal(cloudAbsent.risingSource, 'manual');
+
+  const legacy = mergeCloudProfile(normalizeProfile({
+    birthtime: '12:00',
+    zodiac: 'scorpio',
+    risingSign: 'aries',
+  }), {});
+  assert.equal(legacy.astrologyOptIn, false);
+  assert.equal(legacy.risingSource, '');
+});
+
 test('profile modal edits a draft and close discards it', () => {
   const categories = functionBody(main, 'renderCategoryPills', 'triggerCrumbExplosion');
   assert.match(categories, /profileDraft\.category = catId/);
@@ -49,21 +84,67 @@ test('profile modal edits a draft and close discards it', () => {
   assert.match(setup, /beginProfileDraft\(\);\s*modalProfile\.classList\.remove/);
   assert.match(setup, /discardProfileDraft\(\{ closeModal: true \}\)/);
   assert.match(setup, /profileDraft\.risingSign = e\.target\.value/);
+  assert.match(setup, /profileDraft\.risingSource = e\.target\.value \? 'manual' : ''/);
+  assert.match(setup, /profileDraftRisingSelectionTouched = true/);
   assert.doesNotMatch(setup, /userProfile\.risingSign = e\.target\.value/);
+  const beginDraft = functionBody(main, 'beginProfileDraft', 'discardProfileDraft');
+  assert.match(beginDraft, /profileDraftManualRising = profileDraft\.risingSource === 'manual'/);
+  const birthDraft = functionBody(main, 'updateDraftBirthFields');
+  assert.match(birthDraft, /clearRising && !profileDraftManualRising/);
 });
 
-test('profile save is the sole commit and clears or recalculates stale signs', () => {
+test('optional astrology saves manual rising independently and calculates only complete automatic input', () => {
   const save = functionBody(main, 'handleSaveProfile', 'handleClearHistory');
   assert.match(save, /const dependenciesChanged = birthDependencyKey\(candidate\) !== birthDependencyKey\(userProfile\)/);
   assert.match(save, /candidate\.zodiac = calculatedSun\?\.id \|\| ''/);
-  assert.match(save, /if \(!completeRisingInputs\) \{\s*candidate\.risingSign = ''/s);
-  assert.match(save, /dependenciesChanged \|\| !candidate\.risingSign/);
+  assert.match(save, /if \(profileDraftRisingSelectionTouched\) \{\s*candidate\.risingSign = selectedRising;\s*candidate\.risingSource = selectedRising \? 'manual' : ''/s);
+  assert.match(save, /else if \(profileDraftManualRising\) \{\s*candidate\.risingSign = selectedRising;\s*candidate\.risingSource = selectedRising \? 'manual' : ''/s);
+  assert.match(save, /completeRisingInputs && dependenciesChanged/);
+  assert.match(save, /candidate\.risingSource = candidate\.risingSign \? 'calculated' : ''/);
+  assert.match(save, /dependenciesChanged && !completeRisingInputs/);
+  assert.match(save, /candidate\.risingSign = '';\s*candidate\.risingSource = ''/s);
   assert.match(save, /calculateRisingSign\(/);
+  assert.match(save, /const astrologyChanged = profileDraftRisingSelectionTouched \|\| dependenciesChanged/);
+  assert.match(save, /if \(!hasAstrologyInput\) \{\s*candidate\.astrologyOptIn = false/s);
+  assert.match(save, /else if \(astrologyChanged\) \{\s*candidate\.astrologyOptIn = Boolean\(candidate\.zodiac \|\| candidate\.risingSign\)/s);
+  assert.doesNotMatch(save, /candidate\.astrologyOptIn = true/);
   assert.match(save, /const savedProfile = await saveProfile\(normalizedCandidate, ownerUid\)/);
   assert.ok(save.indexOf('replaceAuthoritativeProfile(savedProfile') > save.indexOf('await saveProfile'));
-  const unlock = functionBody(main, 'unlockAIRisingSign', 'updateProfileBadge');
-  assert.match(unlock, /profileDraft\.risingSign = calculatedRising\.id/);
-  assert.doesNotMatch(unlock, /saveProfile|syncUserWithDatabase/);
+  assert.doesNotMatch(main, /unlockAIRisingSign|btn-unlock-rising-free|ai-rising-unlock-panel/);
+});
+
+test('optional astrology is collapsed by default and is not stripped on iOS', () => {
+  const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('./style.css', import.meta.url), 'utf8');
+  assert.match(html, /<details class="profile-section profile-section-birth astro-personalization-details">/);
+  assert.match(html, /<summary class="profile-section-heading astro-personalization-summary">/);
+  assert.doesNotMatch(html, /profile-section-birth astro-personalization-details" open/);
+  assert.match(html, /id="input-profile-birthtime" class="input-text" \/>/);
+  assert.doesNotMatch(html, /feat-rising-1|Yükselen Burç Analizi/);
+  const capture = functionBody(main, 'captureFortuneRequestContext', 'premiumRequestMatchesContext');
+  assert.match(capture, /normalizeProfile\(\s*userProfile,\s*language,?\s*\)/s);
+  assert.doesNotMatch(capture, /Capacitor|getFortuneProfileForPlatform/);
+  assert.match(main, /inputProfileBirthtime\.value = profile\.birthtime \|\| ''/);
+  assert.doesNotMatch(css, /html\.platform-ios \.profile-section-birth/);
+  assert.doesNotMatch(main, /isIOSPlatform|getFortuneProfileForPlatform/);
+});
+
+test('astrology presentation requires the same explicit opt-in as fortune context', () => {
+  const profileBadge = functionBody(main, 'updateProfileBadge', 'checkAndShowAnniversaryReminder');
+  assert.match(profileBadge, /const astrologyEnabled = userProfile\.astrologyOptIn === true/);
+  assert.match(profileBadge, /astrologyEnabled && userProfile\.risingSign/);
+  const render = functionBody(main, 'renderFortuneResult', 'resetCookieTapProgress');
+  assert.match(render, /requestProfile\.astrologyOptIn === true && requestProfile\.zodiac/);
+  assert.match(render, /lastGeneratedFortune\.zodiacId = null/);
+  const language = functionBody(main, 'updateLanguageUI');
+  assert.match(language, /userProfile\.astrologyOptIn === true && userProfile\.zodiac/);
+  const story = functionBody(main, 'openStoryModal', 'syncStartupAccountUI');
+  assert.match(story, /userProfile\.astrologyOptIn === true && userProfile\.zodiac/);
+  assert.match(story, /const storyZodiacIcon = zObj \? zObj\.icon : '🥠'/);
+  assert.match(story, /:\s*'Fortune'/);
+  assert.match(story, /zodiacIcon: storyZodiacIcon/);
+  assert.match(story, /zodiacName: storyZodiacName/);
+  assert.doesNotMatch(story, /zodiacIcon: lastGeneratedFortune\.zodiacIcon|zodiacName: lastGeneratedFortune\.zodiacName/);
 });
 
 test('explicit language changes persist in sequence and win over older same-owner hydration', () => {

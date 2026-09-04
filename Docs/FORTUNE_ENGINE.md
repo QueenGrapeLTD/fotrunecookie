@@ -46,13 +46,17 @@ The active AI prompt owner is `functions/index.js:buildLocalizedFortunePrompt`.
 
 ## Remote context
 
-The wire request includes a sanitized optional name, zodiac, rising sign, category, timezone ID, selected language, and request ID. The server also derives local date, private recent AI novelty history, a randomized recipe, and a UID/request-derived variation key.
+The wire request always includes a sanitized optional name, category, selected language, and request ID. The profile UI keeps astrological personalization collapsed and optional by default. If `astrologyOptIn !== true`, the adapter sends zodiac, rising sign, and timezone ID as empty strings; the request still follows the normal premium/rewarded AI path with neutral, non-astrological context.
 
-The wire request omits raw birth date/time, birthplace, country/city/region, coordinates, and timezone offset. Birth data matters only through locally derived zodiac/rising sign; on iOS both are deliberately removed and the server uses neutral, non-astrological context.
+With explicit opt-in, the wire may additionally include a Sun sign derived from a valid birth date, a rising sign that was either calculated from complete inputs or manually selected, and a timezone ID used to derive the local date. `risingSource` records `calculated` or `manual` provenance in the profile but is not sent to generation. The wire always omits raw birth date/time, birthplace, country/city/region, coordinates, and timezone offset. Android, iOS, and web follow the same contract.
+
+This is not a full natal chart. The active prompt can use broad Sun/rising themes implicitly, but it receives no houses, degrees, aspects, Moon sign, planetary positions, or transits. The server also derives private recent AI novelty history, a randomized recipe, and a UID/request-derived variation key.
 
 ## Recovery status
 
 - Resolved: absent/invalid zodiac remains unavailable; neutral requests do not infer Aries or any sign.
+- Resolved: `astrologyOptIn` defaults to false and must be the exact boolean `true`; empty profiles and legacy records containing astrology fields do not silently opt in.
+- Resolved: rising-sign provenance is explicit in the stored profile (`manual` or `calculated`) without expanding the AI wire contract.
 - Resolved: the optional sanitized name reaches the active prompt as inert data. A fortune may omit it; if used, server/client validation allows the exact name at most once.
 - Resolved: premium and rewarded AI share private non-repetition memory without exposing it as user-visible history.
 - Resolved: Latin-language guards reject marker-free English for non-English Latin locales; ten-language fixtures and the curated library are tested.

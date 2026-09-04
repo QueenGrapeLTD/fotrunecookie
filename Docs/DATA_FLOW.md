@@ -22,9 +22,11 @@ Status: Recovery implementation baseline as of 2026-09-04.
 | --- | --- | --- |
 | Name | May be prepended locally | Sanitized and sent; optional in output, exact value at most once |
 | Category | Selects local pool | Sent and used |
-| Zodiac | Ignored | Sent and used when valid; absent stays neutral |
-| Rising sign | Ignored | Sent and used when valid |
-| Timezone ID | Ignored | Sent; derives local date |
+| Astrology opt-in | Ignored | Exact boolean gate; false/missing sends neutral empty astrology fields without blocking AI |
+| Zodiac | Ignored | Sent only after explicit opt-in; derived from valid birth date and used as a broad Sun theme |
+| Rising sign | Ignored | Sent only after explicit opt-in; calculated from complete inputs or manually selected |
+| Rising source | Ignored | Stored as `calculated` or `manual` provenance; not sent |
+| Timezone ID | Ignored | Sent only after explicit opt-in; derives local date |
 | Selected language | Selects local pool | Sent as `lang`; prompt and validators use it |
 | Birth date/time/place | Only indirect calculations | Raw values not sent |
 | Coordinates/offset | Only indirect rising-sign calculation | Not sent |
@@ -50,6 +52,9 @@ Lucky numbers are generated after the fortune text and never influence AI genera
 - Resolved: completion request state and canonical premium history commit in one batch; novelty memory is written only afterward.
 - Resolved: generation waits for owner-specific fresh hydration and is bound to immutable auth/language/profile context.
 - Resolved: profile edits are draft-only until Save and dependency changes clear/recalculate zodiac/rising sign.
+- Resolved: the astrology section is collapsed and optional by default on every platform. Empty input clears opt-in; missing opt-in on legacy records remains false.
+- Resolved: opted-out requests send empty zodiac/rising/timezone fields and continue through normal AI generation. Opted-in requests send only derived sign identifiers and timezone ID; raw birth/location fields and `risingSource` remain local/profile state.
+- Resolved: iOS uses the same opt-in and presentation rules as Android/web. No full natal-chart data is calculated or transmitted to the active model path.
 - Remaining P1 candidate: the profile identity-field/rules transition mismatch needs a focused authenticated integration test.
 - Remaining P2: timezone/day-boundary conventions, guest-history ownership on shared devices, and lack of a checked-in emulator/dev-data boundary.
 
@@ -59,3 +64,4 @@ Lucky numbers are generated after the fortune text and never influence AI genera
 - Deduplicate existing timestamp-based local IDs by `requestId` where available; do not destructively rewrite them during ordinary app startup.
 - Optional legacy reflection fields require no migration and remain accepted so existing documents can still be updated safely.
 - Do not mass-recalculate stored rising signs.
+- Do not infer astrology consent from legacy zodiac, rising, timezone, or birth fields; only `astrologyOptIn === true` enables the generation context.

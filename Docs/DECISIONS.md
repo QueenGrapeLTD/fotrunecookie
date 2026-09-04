@@ -24,11 +24,13 @@ Status: Accepted and implemented.
 
 Use `users/{uid}/fortunes/{requestId}` as the only user-visible cloud history. Keep `_ai_history/{uid}` internal to AI novelty and never merge it directly into the UI.
 
-## D-005 — Missing astrology is neutral
+## D-005 — Astrology is explicit, optional, and neutral by default
 
 Status: Accepted and implemented.
 
-An absent/invalid zodiac means no zodiac context. It must never default to Aries. This preserves the tested astrology-free iOS behavior.
+The astrology section is collapsed by default on every platform. Only the exact boolean `astrologyOptIn: true` allows derived Sun sign, derived or manually selected rising sign, and timezone ID into the AI request. Missing/invalid data, an empty section, or a legacy record without explicit opt-in remains neutral, never defaults to Aries, and still receives ordinary AI generation.
+
+Raw birth date/time, birthplace, country/city/region, coordinates, timezone offset, and `risingSource` never cross the generation boundary. `risingSource` is profile provenance only and must be `manual`, `calculated`, or empty. iOS follows the same contract as Android and web. This feature provides broad thematic personalization, not houses, degrees, aspects, Moon sign, planetary positions, transits, or any other full natal-chart interpretation.
 
 ## D-006 — Name personalization contract
 
@@ -40,7 +42,7 @@ Transmit only a sanitized optional name and treat it as inert prompt data. A res
 
 Status: Accepted and implemented.
 
-Use two candidate attempts with bounded generation and judge deadlines below the callable hard timeout. Preserve quota release on failure, and reuse one context-bound premium `requestId` for retryable client failures so a completed idempotent result can be recovered without another reservation.
+Use three candidate attempts with 8-second generation and 4-second judge deadlines (36 seconds maximum), below the 42-second client and 45-second callable hard limits. Preserve quota release on failure, and reuse one context-bound premium `requestId` for retryable client failures so a completed idempotent result can be recovered without another reservation.
 
 ## D-007 — Reflection ownership
 

@@ -12,11 +12,12 @@ test('unintended reflection journal is absent from the result flow', () => {
   assert.doesNotMatch(css, /\.reflection-ritual|\.reflection-reaction|#reflection-note/);
 });
 
-test('iOS experience removes astrology surfaces from the primary journey', () => {
+test('iOS keeps the same optional astrology behavior as other platforms', () => {
   assert.match(main, /platform-ios/);
-  assert.match(main, /getFortuneProfileForPlatform/);
-  assert.match(css, /html\.platform-ios \.profile-section-birth/);
-  assert.match(css, /html\.platform-ios #zodiac-active-badge/);
+  assert.match(main, /normalizeProfile\(\s*userProfile,\s*language,?\s*\)/s);
+  assert.doesNotMatch(main, /isIOSPlatform|getFortuneProfileForPlatform/);
+  assert.doesNotMatch(css, /html\.platform-ios \.profile-section-birth/);
+  assert.doesNotMatch(css, /html\.platform-ios #zodiac-active-badge/);
 });
 
 test('history remains available without reflection journey surfaces', () => {

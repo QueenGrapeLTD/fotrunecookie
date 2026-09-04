@@ -139,6 +139,26 @@ test('client validation allows an optional profile name but rejects repeated nam
   );
 });
 
+test('fortune callable sends astrology only after explicit opt in', () => {
+  assert.match(
+    firebaseSource,
+    /zodiac: profile\.astrologyOptIn === true[\s\S]*?\? cleanString\(profile\.zodiac, 20\)[\s\S]*?: ""/,
+  );
+  assert.match(
+    firebaseSource,
+    /risingSign: profile\.astrologyOptIn === true[\s\S]*?\? cleanString\(profile\.risingSign, 20\)[\s\S]*?: ""/,
+  );
+  assert.match(
+    firebaseSource,
+    /timezoneId: profile\.astrologyOptIn === true[\s\S]*?\? cleanString\(profile\.timezoneId, 64\)[\s\S]*?: ""/,
+  );
+  const callablePayload = firebaseSource.slice(
+    firebaseSource.indexOf('export async function callGenerateFortuneCloudFunction'),
+    firebaseSource.indexOf('export async function syncPremiumEntitlementFromServer'),
+  );
+  assert.doesNotMatch(callablePayload, /birthdate|birthtime|birthplace|latitude|longitude|timezoneOffset/);
+});
+
 test('client fortune validation and callable parsing enforce the 200-character contract', () => {
   const fragment = sourceFragment(
     aiEngineSource,

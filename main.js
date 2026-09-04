@@ -108,6 +108,7 @@ let authUiVersion = 0;
 let profileRevision = 0;
 let profileDraft = null;
 let profileDraftManualRising = false;
+let profileDraftRisingSelectionTouched = false;
 let languageSelectionVersion = 0;
 let languagePersistenceQueue = Promise.resolve();
 const explicitLanguageByAuthContext = new Map();
@@ -118,20 +119,6 @@ let activeProfileHydration = {
   resolve: () => {},
 };
 const profileHydrationListeners = new Set();
-const isIOSPlatform = Capacitor.getPlatform() === 'ios';
-
-function getFortuneProfileForPlatform(profile = userProfile) {
-  if (!isIOSPlatform) return profile;
-  return {
-    ...profile,
-    birthdate: '',
-    birthtime: '',
-    birthplace: '',
-    zodiac: '',
-    risingSign: '',
-  };
-}
-
 let lastGeneratedFortune = {
   quote: '',
   numbers: [],
@@ -259,6 +246,7 @@ function replaceAuthoritativeProfile(profile, fallbackLanguage = currentLang) {
   profileRevision += 1;
   profileDraft = null;
   profileDraftManualRising = false;
+  profileDraftRisingSelectionTouched = false;
   return userProfile;
 }
 
@@ -307,7 +295,7 @@ function captureFortuneRequestContext() {
   const user = auth.currentUser;
   const language = currentLang;
   const normalizedProfile = normalizeProfile(
-    getFortuneProfileForPlatform(userProfile),
+    userProfile,
     language,
   );
   const immutableProfile = Object.freeze({
@@ -385,7 +373,9 @@ function mergeCloudProfile(localProfile, cloudProfile) {
     birthRegion: 'birthRegion',
     timezoneId: 'timezoneId',
     risingSign: 'risingSign',
+    risingSource: 'risingSource',
     zodiac: 'zodiac',
+    astrologyOptIn: 'astrologyOptIn',
     latitude: 'latitude',
     longitude: 'longitude',
     timezoneOffset: 'timezoneOffset',
@@ -406,7 +396,7 @@ function mergeCloudProfile(localProfile, cloudProfile) {
 function renderProfileInputs(profile = userProfile) {
   if (inputProfileName) inputProfileName.value = profile.name || '';
   if (inputProfileBirthdate) inputProfileBirthdate.value = profile.birthdate || '';
-  if (inputProfileBirthtime) inputProfileBirthtime.value = profile.birthtime || '12:00';
+  if (inputProfileBirthtime) inputProfileBirthtime.value = profile.birthtime || '';
   if (inputBirthCountry) inputBirthCountry.value = profile.birthCountry || '';
   if (inputBirthCity) inputBirthCity.value = profile.birthCity || '';
   if (inputBirthRegion) inputBirthRegion.value = profile.birthRegion || '';
@@ -440,7 +430,8 @@ function renderProfileInputs(profile = userProfile) {
 
 function beginProfileDraft() {
   profileDraft = normalizeProfile({ ...userProfile }, currentLang);
-  profileDraftManualRising = false;
+  profileDraftManualRising = profileDraft.risingSource === 'manual';
+  profileDraftRisingSelectionTouched = false;
   renderProfileInputs(profileDraft);
   renderCategoryPills(profileDraft);
   void updateAstrologyCalculations(profileDraft);
@@ -450,6 +441,7 @@ function beginProfileDraft() {
 function discardProfileDraft({ closeModal = false } = {}) {
   profileDraft = null;
   profileDraftManualRising = false;
+  profileDraftRisingSelectionTouched = false;
   renderProfileInputs(userProfile);
   renderCategoryPills(userProfile);
   void updateAstrologyCalculations(userProfile);
@@ -488,9 +480,9 @@ function updateDraftBirthFields({ clearRising = false } = {}) {
     : Number(inputProfileTimezone?.value);
   const calculatedSun = calculateSunSign(profileDraft.birthdate);
   profileDraft.zodiac = calculatedSun?.id || '';
-  if (clearRising) {
+  if (clearRising && !profileDraftManualRising) {
     profileDraft.risingSign = '';
-    profileDraftManualRising = false;
+    profileDraft.risingSource = '';
     const risingSelect = document.getElementById('select-profile-rising');
     if (risingSelect) risingSelect.value = '';
   }
@@ -761,15 +753,12 @@ export async function refreshAppUIState() {
 
 async function updateAstrologyCalculations(profile = profileDraft || userProfile) {
   const bDate = inputProfileBirthdate ? inputProfileBirthdate.value : '';
-  const bTime = inputProfileBirthtime ? inputProfileBirthtime.value : '12:00';
   const sunSignBox = document.getElementById('sun-sign-box');
   const badgeCalculatedSun = document.getElementById('badge-calculated-sun');
   const risingSignBox = document.getElementById('rising-sign-box');
   const badgeCalculatedRising = document.getElementById('badge-calculated-rising');
-  const aiRisingUnlockPanel = document.getElementById('ai-rising-unlock-panel');
 
   if (bDate) {
-    // 1. Calculate Sun Sign (ALWAYS TOP)
     const calculatedSun = calculateSunSign(bDate);
     if (calculatedSun) {
       const sName = calculatedSun.name[currentLang] || calculatedSun.name.en;
@@ -779,21 +768,17 @@ async function updateAstrologyCalculations(profile = profileDraft || userProfile
       if (sunSignBox) sunSignBox.classList.add('hidden');
     }
 
-    // 2. Rising Sign (BELOW SUN SIGN) - Unlocked via AI / Ad / Premium
-    if (risingSignBox) risingSignBox.classList.remove('hidden');
-
-    if (profile.risingSign) {
-      const rObj = zodiacSigns.find(z => z.id === profile.risingSign);
-      const rName = rObj ? (rObj.name[currentLang] || rObj.name.en) : '';
-      const rIcon = rObj ? rObj.icon : '✨';
-      if (badgeCalculatedRising) badgeCalculatedRising.textContent = `🌅 ${rIcon} ${rName}`;
-      if (aiRisingUnlockPanel) aiRisingUnlockPanel.classList.add('hidden');
-    } else {
-      if (badgeCalculatedRising) badgeCalculatedRising.textContent = `🌅 ${t('locked')} 🔒`;
-      if (aiRisingUnlockPanel) aiRisingUnlockPanel.classList.remove('hidden');
-    }
   } else {
     if (sunSignBox) sunSignBox.classList.add('hidden');
+  }
+
+  if (profile.risingSign) {
+    const rObj = zodiacSigns.find(z => z.id === profile.risingSign);
+    const rName = rObj ? (rObj.name[currentLang] || rObj.name.en) : '';
+    const rIcon = rObj ? rObj.icon : '✨';
+    if (badgeCalculatedRising) badgeCalculatedRising.textContent = `🌅 ${rIcon} ${rName}`;
+    if (risingSignBox) risingSignBox.classList.remove('hidden');
+  } else {
     if (risingSignBox) risingSignBox.classList.add('hidden');
   }
 }
@@ -847,10 +832,12 @@ async function handleResolveBirthLocation() {
     profileDraft.timezoneId = resolved.timezoneId;
     profileDraft.latitude = resolved.latitude;
     profileDraft.longitude = resolved.longitude;
-    profileDraft.risingSign = '';
-    profileDraftManualRising = false;
-    const risingSelect = document.getElementById('select-profile-rising');
-    if (risingSelect) risingSelect.value = '';
+    if (!profileDraftManualRising) {
+      profileDraft.risingSign = '';
+      profileDraft.risingSource = '';
+      const risingSelect = document.getElementById('select-profile-rising');
+      if (risingSelect) risingSelect.value = '';
+    }
     const offset = refreshBirthTimezoneOffset(profileDraft);
     const offsetText = offset === null ? 'doğum tarihini girince hesaplanacak' : `UTC${offset >= 0 ? '+' : ''}${offset}`;
     setLocationLookupStatus(
@@ -868,49 +855,16 @@ async function handleResolveBirthLocation() {
   }
 }
 
-// Calculate into the modal draft. The Save action is the only profile commit.
-async function unlockAIRisingSign() {
-  if (!profileDraft) beginProfileDraft();
-  const bDate = inputProfileBirthdate ? inputProfileBirthdate.value : '';
-  const bTime = inputProfileBirthtime ? inputProfileBirthtime.value : '12:00';
-
-  const location = {
-    latitude: inputProfileLatitude?.value,
-    longitude: inputProfileLongitude?.value,
-    timezoneOffset: inputProfileTimezone?.value
-  };
-
-  if (!bDate || !bTime || location.latitude === '' || location.longitude === '' || location.timezoneOffset === '') {
-    showToast('⚠️ Doğum tarihi ve saatini girip doğum yerinizi bulun.');
-    return;
-  }
-
-  showToast('🌅 Yükselen burcunuz hesaplanıyor...');
-
-  const calculatedRising = calculateRisingSign(bDate, bTime, location);
-  if (calculatedRising) {
-    profileDraft.birthdate = bDate;
-    profileDraft.birthtime = bTime;
-    profileDraft.latitude = Number(location.latitude);
-    profileDraft.longitude = Number(location.longitude);
-    profileDraft.timezoneOffset = Number(location.timezoneOffset);
-    profileDraft.risingSign = calculatedRising.id;
-    profileDraftManualRising = true;
-    const risingSelect = document.getElementById('select-profile-rising');
-    if (risingSelect) risingSelect.value = calculatedRising.id;
-
-    await updateAstrologyCalculations(profileDraft);
-    showToast(`✨ Yükselen burcunuz: ${calculatedRising.icon} ${calculatedRising.name[currentLang] || calculatedRising.name.en}`);
-  }
-}
-
 function updateProfileBadge() {
   if (userProfile && userProfile.name && userProfile.name.trim().length > 0) {
     badgeUserName.textContent = userProfile.name;
-    const zObj = zodiacSigns.find(z => z.id === userProfile.zodiac);
+    const astrologyEnabled = userProfile.astrologyOptIn === true;
+    const zObj = astrologyEnabled
+      ? zodiacSigns.find(z => z.id === userProfile.zodiac)
+      : null;
     badgeUserZodiac.textContent = zObj ? zObj.icon : '✨';
 
-    if (userProfile.risingSign) {
+    if (astrologyEnabled && userProfile.risingSign) {
       const rObj = zodiacSigns.find(z => z.id === userProfile.risingSign);
       badgeUserRising.textContent = rObj ? `🌅 ${rObj.icon}` : '🌅';
       badgeUserRising.classList.remove('hidden');
@@ -1404,30 +1358,30 @@ async function renderFortuneResult(
     <div class="number-badge">${num < 10 ? '0' + num : num}</div>
   `).join('');
 
-  if (!isIOSPlatform && requestProfile.zodiac) {
-    const zObj = zodiacSigns.find(z => z.id === requestProfile.zodiac);
-    if (zObj) {
-      zodiacBadgeIcon.textContent = zObj.icon;
-      zodiacBadgeName.textContent = zObj.name[requestLang] || zObj.name.en;
+  const zObj = requestProfile.astrologyOptIn === true && requestProfile.zodiac
+    ? zodiacSigns.find(z => z.id === requestProfile.zodiac)
+    : null;
+  if (zObj) {
+    zodiacBadgeIcon.textContent = zObj.icon;
+    zodiacBadgeName.textContent = zObj.name[requestLang] || zObj.name.en;
 
-      if (requestProfile.risingSign) {
-        const rObj = zodiacSigns.find(z => z.id === requestProfile.risingSign);
-        if (rObj) {
-          const risingPrefix = texts.risingPrefix || '🌅 Rising: ';
-          zodiacBadgeRising.textContent = `${risingPrefix}${rObj.name[requestLang] || rObj.name.en}`;
-          zodiacBadgeRising.classList.remove('hidden');
-        } else {
-          zodiacBadgeRising.classList.add('hidden');
-        }
+    if (requestProfile.risingSign) {
+      const rObj = zodiacSigns.find(z => z.id === requestProfile.risingSign);
+      if (rObj) {
+        const risingPrefix = texts.risingPrefix || '🌅 Rising: ';
+        zodiacBadgeRising.textContent = `${risingPrefix}${rObj.name[requestLang] || rObj.name.en}`;
+        zodiacBadgeRising.classList.remove('hidden');
       } else {
         zodiacBadgeRising.classList.add('hidden');
       }
-
-      zodiacActiveBadge.classList.remove('hidden');
-      lastGeneratedFortune.zodiacId = zObj.id;
-      lastGeneratedFortune.zodiacIcon = zObj.icon;
-      lastGeneratedFortune.zodiacName = zObj.name[requestLang] || zObj.name.en;
+    } else {
+      zodiacBadgeRising.classList.add('hidden');
     }
+
+    zodiacActiveBadge.classList.remove('hidden');
+    lastGeneratedFortune.zodiacId = zObj.id;
+    lastGeneratedFortune.zodiacIcon = zObj.icon;
+    lastGeneratedFortune.zodiacName = zObj.name[requestLang] || zObj.name.en;
   } else {
     zodiacActiveBadge.classList.add('hidden');
     lastGeneratedFortune.zodiacId = null;
@@ -1829,16 +1783,43 @@ async function handleSaveProfile() {
       Number.isFinite(candidate.timezoneOffset),
     );
     const selectedRising = document.getElementById('select-profile-rising')?.value || '';
-    if (!completeRisingInputs) {
-      candidate.risingSign = '';
-    } else if (profileDraftManualRising && selectedRising) {
+    const astrologyChanged = profileDraftRisingSelectionTouched || dependenciesChanged;
+    if (profileDraftRisingSelectionTouched) {
       candidate.risingSign = selectedRising;
-    } else if (dependenciesChanged || !candidate.risingSign) {
+      candidate.risingSource = selectedRising ? 'manual' : '';
+    } else if (profileDraftManualRising) {
+      candidate.risingSign = selectedRising;
+      candidate.risingSource = selectedRising ? 'manual' : '';
+    } else if (completeRisingInputs && dependenciesChanged) {
       candidate.risingSign = calculateRisingSign(
         candidate.birthdate,
         candidate.birthtime,
         candidate,
       )?.id || '';
+      candidate.risingSource = candidate.risingSign ? 'calculated' : '';
+    } else if (dependenciesChanged && !completeRisingInputs) {
+      candidate.risingSign = '';
+      candidate.risingSource = '';
+    }
+
+    const hasAstrologyInput = Boolean(
+      candidate.birthdate ||
+      candidate.birthtime ||
+      candidate.birthCountry ||
+      candidate.birthCity ||
+      candidate.birthRegion ||
+      candidate.timezoneId ||
+      Number.isFinite(candidate.latitude) ||
+      Number.isFinite(candidate.longitude) ||
+      Number.isFinite(candidate.timezoneOffset) ||
+      candidate.zodiac ||
+      candidate.risingSign
+    );
+    if (!hasAstrologyInput) {
+      candidate.astrologyOptIn = false;
+      candidate.risingSource = '';
+    } else if (astrologyChanged) {
+      candidate.astrologyOptIn = Boolean(candidate.zodiac || candidate.risingSign);
     }
 
     const normalizedCandidate = normalizeProfile(candidate, currentLang);
@@ -2084,11 +2065,6 @@ function updateLanguageUI() {
     });
   }
 
-  const featRising1 = document.getElementById('feat-rising-1');
-  if (featRising1) featRising1.textContent = texts.featRising || '';
-  const featRising2 = document.getElementById('feat-rising-2');
-  if (featRising2) featRising2.textContent = texts.featRising || '';
-
   const featNoAds1 = document.getElementById('feat-no-ads-1');
   if (featNoAds1) featNoAds1.textContent = texts.featNoAds || '';
   const featNoAds2 = document.getElementById('feat-no-ads-2');
@@ -2156,7 +2132,7 @@ function updateLanguageUI() {
   }
 
   // Refresh active result card zodiac sign translations if visible
-  if (userProfile.zodiac) {
+  if (userProfile.astrologyOptIn === true && userProfile.zodiac) {
     const zObj = zodiacSigns.find(z => z.id === userProfile.zodiac);
     if (zObj && zodiacBadgeName) {
       zodiacBadgeName.textContent = zObj.name[currentLang] || zObj.name.en;
@@ -2179,14 +2155,19 @@ function updateLanguageUI() {
 let activeStoryCanvas = null;
 
 async function openStoryModal() {
-  const zObj = !isIOSPlatform && userProfile.zodiac ? zodiacSigns.find(z => z.id === userProfile.zodiac) : null;
-  const locZodiacName = zObj ? (zObj.name[currentLang] || zObj.name.en) : lastGeneratedFortune.zodiacName;
+  const zObj = userProfile.astrologyOptIn === true && userProfile.zodiac
+    ? zodiacSigns.find(z => z.id === userProfile.zodiac)
+    : null;
+  const storyZodiacIcon = zObj ? zObj.icon : '🥠';
+  const storyZodiacName = zObj
+    ? (zObj.name[currentLang] || zObj.name.en)
+    : 'Fortune';
 
   activeStoryCanvas = await generateStoryCardCanvas({
     quote: lastGeneratedFortune.quote,
     luckyNumbers: lastGeneratedFortune.numbers,
-    zodiacIcon: lastGeneratedFortune.zodiacIcon,
-    zodiacName: locZodiacName,
+    zodiacIcon: storyZodiacIcon,
+    zodiacName: storyZodiacName,
     userName: lastGeneratedFortune.userName,
     lang: currentLang,
     brandName: 'Fortune Cookie AI',
@@ -2924,6 +2905,8 @@ function setupEventListeners() {
       if (!profileDraft) beginProfileDraft();
       profileDraft.risingSign = e.target.value;
       profileDraftManualRising = Boolean(e.target.value);
+      profileDraftRisingSelectionTouched = true;
+      profileDraft.risingSource = e.target.value ? 'manual' : '';
       await updateAstrologyCalculations(profileDraft);
     });
   }
@@ -2994,14 +2977,6 @@ function setupEventListeners() {
       }
       accountStateCache = null;
       await refreshAppUIState();
-    });
-  }
-
-  // AI Rising Sign Unlock Listener (1-time free for Premium AI Members)
-  const btnUnlockRisingFree = document.getElementById('btn-unlock-rising-free');
-  if (btnUnlockRisingFree) {
-    btnUnlockRisingFree.addEventListener('click', async () => {
-      await unlockAIRisingSign();
     });
   }
 
