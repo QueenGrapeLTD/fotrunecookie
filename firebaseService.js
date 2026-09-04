@@ -18,6 +18,7 @@ import {
   sendPasswordResetEmail,
   deleteUser,
   updateProfile,
+  getAdditionalUserInfo,
   EmailAuthProvider,
   GoogleAuthProvider,
   OAuthProvider,
@@ -338,21 +339,15 @@ function getProfilePayload(user, profileData = {}, cloudData = {}) {
   });
 
   const displayName = candidate.name || cleanString(user.displayName, 80);
-  const nameParts = displayName.split(/\s+/).filter(Boolean);
+  const names = getProfileNames(user, profileData, cloudData, displayName);
   const providerIds = Array.isArray(user.providerData)
     ? user.providerData.map((provider) => provider?.providerId).filter(Boolean)
     : [];
   return {
     uid: user.uid,
     displayName,
-    firstName: cleanString(
-      cloudData.firstName || nameParts.slice(0, -1).join(" ") || nameParts[0],
-      80,
-    ),
-    lastName: cleanString(
-      cloudData.lastName || (nameParts.length > 1 ? nameParts.at(-1) : ""),
-      80,
-    ),
+    firstName: names.firstName,
+    lastName: names.lastName,
     email: cleanString(user.email || cloudData.email, 254),
     photoURL: cleanString(user.photoURL || cloudData.photoURL, 1000),
     authProvider: cleanString(providerIds.join(",") || cloudData.authProvider, 80),
@@ -586,6 +581,52 @@ const appleProvider = new OAuthProvider("apple.com");
 appleProvider.addScope("email");
 appleProvider.addScope("name");
 
+const socialProviderNames = new WeakMap();
+let pendingSocialSignIn = null;
+
+function rememberProviderNames(result) {
+  if (!result?.user) return;
+  const profile = getAdditionalUserInfo(result)?.profile || {};
+  socialProviderNames.set(result.user, {
+    displayName: cleanString(result.user.displayName, 80),
+    firstName: cleanString(profile.given_name, 80),
+    lastName: cleanString(profile.family_name, 80),
+  });
+}
+
+function getProfileNames(user, profileData, cloudData, displayName) {
+  const previousName = cleanString(cloudData.displayName, 80);
+  const changedName = hasOwn(profileData, "name") && displayName !== previousName;
+  const providerNames = socialProviderNames.get(user);
+  // A full display name cannot reliably be split into given/family names.
+  // Preserve existing components only while they still describe that name.
+  if (!changedName && previousName === displayName) {
+    return {
+      firstName: cleanString(cloudData.firstName, 80),
+      lastName: cleanString(cloudData.lastName, 80),
+    };
+  }
+  if (providerNames?.displayName === displayName) {
+    return { firstName: providerNames.firstName, lastName: providerNames.lastName };
+  }
+  return { firstName: "", lastName: "" };
+}
+
+async function prepareSocialSignIn(operation) {
+  // Set the barrier before Firebase can emit its auth-state event. In the
+  // native Apple bridge the one-time name arrives after credential sign-in.
+  const pending = Promise.resolve().then(operation).then((result) => {
+    rememberProviderNames(result);
+    return result;
+  });
+  pendingSocialSignIn = pending;
+  try {
+    return await pending;
+  } finally {
+    if (pendingSocialSignIn === pending) pendingSocialSignIn = null;
+  }
+}
+
 async function completeSocialSignIn(result) {
   const user = result?.user;
   // onAuthStateChanged owns profile hydration. Waiting for an additional
@@ -730,9 +771,9 @@ async function resetFailedNativeSocialSession() {
 
 export async function signInWithGoogle() {
   try {
-    const result = isNativeMobileAuthRuntime()
-      ? await signInNatively("google")
-      : await signInWithPopup(auth, googleProvider);
+    const result = await prepareSocialSignIn(() => isNativeMobileAuthRuntime()
+      ? signInNatively("google")
+      : signInWithPopup(auth, googleProvider));
     return completeSocialSignIn(result);
   } catch (error) {
     console.error("Google Sign-In Error:", error?.code, error?.message);
@@ -751,9 +792,9 @@ export const loginWithGoogle = signInWithGoogle;
 
 export async function signInWithApple() {
   try {
-    const result = isNativeMobileAuthRuntime()
-      ? await signInNatively("apple")
-      : await signInWithPopup(auth, appleProvider);
+    const result = await prepareSocialSignIn(() => isNativeMobileAuthRuntime()
+      ? signInNatively("apple")
+      : signInWithPopup(auth, appleProvider));
     return completeSocialSignIn(result);
   } catch (error) {
     console.error("Apple Sign-In Error:", error?.code, error?.message);
@@ -1158,6 +1199,10 @@ export function onAuthChange(callback) {
     if (user.isAnonymous) {
       if (isCurrentChange()) callback(user, null);
       return;
+    }
+    if (pendingSocialSignIn) {
+      await pendingSocialSignIn.catch(() => {});
+      if (!isCurrentChange()) return;
     }
     let timeoutId;
     const syncTimedOut = Symbol("auth-profile-sync-timeout");
