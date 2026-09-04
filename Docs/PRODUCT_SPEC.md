@@ -1,6 +1,6 @@
 # Product Specification
 
-Status: Repository-verified baseline as of 2026-08-28.
+Status: Repository-verified baseline as of 2026-09-04.
 
 ## Product behavior
 
@@ -24,6 +24,8 @@ The active generation systems recognize ten languages: Turkish, English, German,
 
 ## Recovery decisions
 
-- Premium/rewarded AI fortunes use an optional sanitized name. The prompt treats it as inert data, and validation requires it exactly once when supplied. Raw birth/location data remains client-side.
+- Premium/rewarded AI fortunes use an optional sanitized name. The prompt treats it as inert data; the result may omit it and may use the exact name at most once. Raw birth/location data remains client-side.
+- AI fortunes use hopeful possibility, lucky observation, or playful recognition forms rather than requiring stock positive words. Safety, language, novelty and non-directive delivery gates remain mandatory.
+- A retryable premium transport or timeout failure keeps the same request identity so retrying can recover the completed result without spending another premium use. This does not change ordinary free or rewarded routing.
 - Legacy reflection fields are retained only for backward compatibility with existing documents; the app no longer renders or authors reflection entries.
 - Explicit history clearing removes both the user's visible canonical history and private AI novelty memory through an authenticated callable. No automatic migration or background deletion is performed.

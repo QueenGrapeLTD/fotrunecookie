@@ -38,9 +38,9 @@ function isNameBoundary(character) {
   return !character || !/[\p{L}\p{M}\p{N}]/u.test(character);
 }
 
-function hasExactlyOnePersonalName(value, expectedName = "", language = "en") {
+function personalNameOccurrenceCount(value, expectedName = "", language = "en") {
   const name = comparablePersonalText(expectedName, language).trim();
-  if (!name) return true;
+  if (!name) return 0;
   const text = comparablePersonalText(value, language);
   let occurrences = 0;
   let cursor = 0;
@@ -52,7 +52,16 @@ function hasExactlyOnePersonalName(value, expectedName = "", language = "en") {
     if (isNameBoundary(before) && isNameBoundary(after)) occurrences += 1;
     cursor = index + Math.max(name.length, 1);
   }
-  return occurrences === 1;
+  return occurrences;
+}
+
+function hasExactlyOnePersonalName(value, expectedName = "", language = "en") {
+  if (!comparablePersonalText(expectedName, language).trim()) return true;
+  return personalNameOccurrenceCount(value, expectedName, language) === 1;
+}
+
+function hasAtMostOnePersonalName(value, expectedName = "", language = "en") {
+  return personalNameOccurrenceCount(value, expectedName, language) <= 1;
 }
 
 function hasInvalidFortuneToken(value) {
@@ -310,6 +319,7 @@ module.exports = {
   UPLIFTING_CUE_PROMPTS,
   UPLIFTING_CUE_TERMS,
   contentWords,
+  hasAtMostOnePersonalName,
   hasExactlyOnePersonalName,
   hasFrighteningOutcome,
   hasInvalidFortuneToken,

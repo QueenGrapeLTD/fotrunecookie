@@ -1,5 +1,5 @@
 import { zodiacSigns, categories, fortunes, uiText, getRandomFortune } from './fortunes.js';
-import { fetchRemoteAIPrediction } from './aiEngine.js';
+import { classifyFortuneRequestError, fetchRemoteAIPrediction } from './aiEngine.js';
 import { soundManager } from './audio.js';
 import { generateStoryCardCanvas } from './cardExporter.js';
 import {
@@ -97,6 +97,7 @@ let userProfile = normalizeProfile(
 );
 let isAnimating = false;
 let fortuneRequestInFlight = false;
+let pendingPremiumFortuneRequest = null;
 let cookieTapCount = 0;
 let appSettings = {
   freeDailyLimit: 1,
@@ -322,6 +323,41 @@ function captureFortuneRequestContext() {
     profileRevision,
     profile: immutableProfile,
   });
+}
+
+function premiumRequestMatchesContext(pendingRequest, requestContext) {
+  return Boolean(
+    pendingRequest?.requestId &&
+    requestContext &&
+    pendingRequest.authContext === requestContext.authContext &&
+    pendingRequest.language === requestContext.language &&
+    pendingRequest.profileRevision === requestContext.profileRevision
+  );
+}
+
+function requestIdForPremiumContext(requestContext) {
+  if (premiumRequestMatchesContext(pendingPremiumFortuneRequest, requestContext)) {
+    return pendingPremiumFortuneRequest.requestId;
+  }
+  const requestId =
+    globalThis.crypto?.randomUUID?.() ||
+    `${Date.now()}_${Math.random().toString(36).slice(2, 18)}`;
+  pendingPremiumFortuneRequest = {
+    requestId,
+    authContext: requestContext.authContext,
+    language: requestContext.language,
+    profileRevision: requestContext.profileRevision,
+  };
+  return requestId;
+}
+
+function clearPendingPremiumRequest(requestContext = null) {
+  if (
+    !requestContext ||
+    premiumRequestMatchesContext(pendingPremiumFortuneRequest, requestContext)
+  ) {
+    pendingPremiumFortuneRequest = null;
+  }
 }
 
 function assertFortuneRequestContextCurrent(requestContext) {
@@ -1549,6 +1585,9 @@ async function crackCookie() {
     persistCloudHistory: isPremium && Boolean(historyOwnerUid),
     requestContext,
   };
+  const premiumRequestId = isPremium
+    ? requestIdForPremiumContext(requestContext)
+    : '';
 
   triggerHapticFeedback(3);
   soundManager.playCrack();
@@ -1562,9 +1601,12 @@ async function crackCookie() {
     if (isPremium) {
       const result = await fetchRemoteAIPrediction(fortuneProfile, requestContext.language, {
         requireRemote: true,
+        requestId: premiumRequestId,
+        timeoutMs: 42 * 1000,
       });
       fortuneText = result.prediction;
       generation = result;
+      clearPendingPremiumRequest(requestContext);
       accountStateCache = null;
     } else {
       const consumed = await adManager.consumePremiumQuery();
@@ -1595,17 +1637,26 @@ async function crackCookie() {
     stopReadingSequence();
     const errorCode = String(err?.code || '');
     if (errorCode.includes('stale-fortune-context')) {
+      if (isPremium) clearPendingPremiumRequest(requestContext);
       showToast('Oturum, dil veya profil değişti. Eski sonuç kaydedilmedi; yeniden deneyin.');
     } else if (errorCode.includes('resource-exhausted')) {
+      if (isPremium) clearPendingPremiumRequest(requestContext);
       accountStateCache = null;
       showToast(`Günlük ${MAX_PREMIUM_DAILY_CRACKS} AI Şans Kurabiyesi hakkın doldu. Sayaç yarın yenilenir.`);
     } else if (errorCode.includes('aborted')) {
-      showToast('Şans Kurabiyesi isteğin hâlâ işleniyor. Lütfen birkaç saniye bekle.');
+      showToast(isPremium
+        ? classifyFortuneRequestError(err).message
+        : 'Şans Kurabiyesi isteğin hâlâ işleniyor. Lütfen birkaç saniye bekle.');
     } else if (
       errorCode.includes('permission-denied') ||
       errorCode.includes('unauthenticated')
     ) {
+      if (isPremium) clearPendingPremiumRequest(requestContext);
       showToast('Premium üyelik doğrulanamadı. Hesabınıza yeniden giriş yapıp deneyin.');
+    } else if (isPremium) {
+      const disposition = classifyFortuneRequestError(err);
+      if (!disposition.retryable) clearPendingPremiumRequest(requestContext);
+      showToast(disposition.message || t('aiUnavailable'));
     } else {
       showToast(t('aiUnavailable'));
     }

@@ -1,6 +1,6 @@
 # Current State
 
-Updated: 2026-08-29.
+Updated: 2026-09-04.
 
 - Project-scoped custom agent roles: configured in `.codex/agents/`.
 - Repository operating rules: configured in `AGENTS.md`.
@@ -33,3 +33,14 @@ Warnings: real-model cultural naturalness, browser/physical-device integration, 
 - Android release `1.0.27` (`versionCode 29`) was packaged successfully as a signed App Bundle from the synchronized native project. Emulator captures at 1280×2856 verify the approved universal cookie landing, second-tap crack state, and result presentation without banner/content overlap.
 
 Warnings: the physical verified-premium phone was not visible to ADB during final QA. The final post-fix Android Studio Run screenshot was interrupted by the user's physical Escape input; banner geometry was verified from the live WebView measurements and deterministic layout guards. The emulator Google sign-in `-10` is caused by its local debug signing SHA-1 not being registered in the Firebase Android OAuth client. Store publication remains blocked on a real-device end-to-end run and refreshed Firebase debug OAuth configuration.
+
+## Premium AI quality and recovery — 2026-09-04
+
+- Physical device `25010PN30G` running Play release `1.0.27` (`versionCode 29`) reproduced a successful but slow, personality-analysis-like fortune before the fix, then reproduced two-candidate local rejection after the first bounded deployment.
+- Production logs proved the failure was deterministic validation exhaustion rather than a model timeout: one candidate exceeded the 80-character card limit by two characters and the other matched a stale mystical cliché.
+- The final prompt targets 68 characters while the authoritative card validator remains 80. Prompt and judge share hopeful possibility, lucky observation and playful recognition archetypes; stock positive-word matching and forced name insertion are no longer delivery requirements.
+- Generation is bounded to two attempts with 8-second generation and 4-second judge deadlines. Premium client retries retain one context-bound request ID across retryable failures; free/rewarded routing is unchanged.
+- `generateFortune` was deployed to production and is active. The final physical-device call completed on its first candidate and displayed: “Bir yabancının içten selamı, eski bir dostluk kapısını aralayabilir.”
+- Root tests: 126/126. Functions tests: 13/13. Production web build, hosting build, mobile configuration check, App Store blocker check, signed Android release APK build, and independent QA all pass.
+
+Warning: the signed local APK cannot replace the Play-installed app because Google Play app signing and the local upload key differ. The failed replacement left the installed app and its data intact. The client-side retry improvement therefore requires a new Play-distributed build; the server-side quality and timeout fixes are already live for the installed release.

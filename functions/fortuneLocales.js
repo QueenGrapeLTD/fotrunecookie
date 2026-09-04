@@ -1,5 +1,5 @@
 const FORTUNE_LOCALES = Object.freeze({
-  tr: { language: "Turkish", locale: "tr-TR", maxCharacters: 80, culturalProfile: "Contemporary Turkey Turkish. Warm, clear and graceful. Avoid ornate mysticism, old-fashioned wording, translated idioms, fate, cosmic energy and miracles." },
+  tr: { language: "Turkish", locale: "tr-TR", maxCharacters: 80, culturalProfile: "Contemporary Turkey Turkish that sounds originally written in Turkish. Warm, concise, graceful and lightly playful; favor concrete daily-life wording and natural Turkish word order. Avoid ornate mysticism, old-fashioned wording, translated idioms, motivational slogans, fate, cosmic energy and miracles." },
   en: { language: "English", locale: "en-US", maxCharacters: 80, culturalProfile: "Contemporary North American English. Warm, concise and emotionally natural. Avoid ornate mysticism, translated idioms and exaggerated promises." },
   de: { language: "German", locale: "de-DE", maxCharacters: 80, culturalProfile: "Contemporary standard German. Clear, calm and sincere, with natural sentence rhythm. Avoid inflated promises, mystical jargon and translated idioms." },
   fr: { language: "French", locale: "fr-FR", maxCharacters: 80, culturalProfile: "Contemporary French used in France. Elegant but direct, warm and restrained. Avoid grandiloquence, literal translations and mystical clichés." },

@@ -38,7 +38,7 @@ Language is used during both curated selection and AI prompt construction. It is
 ## Baseline P1 findings and recovery status
 
 1. Resolved: missing zodiac is neutral; iOS no longer receives hidden Aries context.
-2. Resolved: optional sanitized name reaches the model and is enforced exactly once by server/client output validation.
+2. Resolved: optional sanitized name reaches the model as inert data; output may omit it and server/client validation permits the exact value at most once.
 3. Resolved: immutable auth/language/profile request context prevents cross-owner or stale-context persistence.
 4. Resolved: authenticated generation waits for owner-specific force-fresh hydration.
 5. Resolved: profile modal edits use a draft and Save clears/recalculates dependent signs.

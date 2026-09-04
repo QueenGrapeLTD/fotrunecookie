@@ -130,8 +130,28 @@ const LOGIN_WRITE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const ACCOUNT_STATE_CACHE_MS = 30 * 1000;
 const PROFILE_CACHE_MS = 15 * 60 * 1000;
 const APP_SETTINGS_CACHE_MS = 5 * 60 * 1000;
+const FORTUNE_CALL_TIMEOUT_MS = 42 * 1000;
 const CACHE_PREFIX = "fc_cache_v2";
 const APP_SETTINGS_CACHE_KEY = `app-settings:${firebaseConfig.projectId}`;
+
+export async function settleFortuneCallWithTimeout(
+  promise,
+  timeoutMs = FORTUNE_CALL_TIMEOUT_MS,
+) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const error = new Error("AI fortune request timed out before the server deadline.");
+      error.code = "functions/deadline-exceeded";
+      reject(error);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 function readLocalCache(key, maxAgeMs, validator = () => true) {
   try {
@@ -370,6 +390,7 @@ export async function callGenerateFortuneCloudFunction(
   profile = {},
   lang = "tr",
   requestId = "",
+  timeoutMs = 0,
 ) {
   if (!auth.currentUser) return null;
 
@@ -388,7 +409,7 @@ export async function callGenerateFortuneCloudFunction(
     ]);
     const requestedLanguage = supportedLanguages.has(lang) ? lang : "en";
     const callable = httpsCallable(functions, "generateFortune");
-    const result = await callable({
+    const invocation = callable({
       profile: {
         name: sanitizeFortuneName(profile.name),
         zodiac: cleanString(profile.zodiac, 20),
@@ -399,6 +420,9 @@ export async function callGenerateFortuneCloudFunction(
       lang: requestedLanguage,
       requestId,
     });
+    const result = timeoutMs > 0
+      ? await settleFortuneCallWithTimeout(invocation, timeoutMs)
+      : await invocation;
 
     const prediction = cleanString(result?.data?.prediction, 360);
     if (!prediction) return null;
@@ -427,6 +451,10 @@ export async function callGenerateFortuneCloudFunction(
       "aborted",
       "functions/unavailable",
       "unavailable",
+      "functions/deadline-exceeded",
+      "deadline-exceeded",
+      "auth/network-request-failed",
+      "network-request-failed",
     ]);
     if (terminalCodes.has(error?.code)) throw error;
     return null;

@@ -12,6 +12,7 @@ const {
   UPLIFTING_CUE_PROMPTS,
   UPLIFTING_CUE_TERMS,
   hasDiscouragingTone,
+  hasAtMostOnePersonalName,
   hasExactlyOnePersonalName,
   hasFrighteningOutcome,
   hasHeavyNegativeFraming,
@@ -40,7 +41,7 @@ test('repetitive Scorpio imagery is rejected even when wording changes', () => {
   assert.equal(isTooSimilar(candidate, recent), true);
 });
 
-test('premium fortunes require an unmistakably uplifting cue in every language', () => {
+test('uplifting cue helper recognizes unmistakably positive wording in every language', () => {
   const upliftingSamples = {
     tr: 'Güzel bir fırsat, gününe beklenmedik bir neşe katabilir.',
     en: 'A welcome opportunity may add a little joy to your day.',
@@ -444,6 +445,23 @@ test('named fortunes require the exact sanitized name once while name-free fortu
     'name-free fortune',
   );
   assert.equal(hasExactlyOnePersonalName('Adana güzel bir sürpriz taşıyor.', 'Ada', 'tr'), false);
+});
+
+test('server personalization accepts a natural name-free fortune and rejects duplicate names', () => {
+  const naturalFortunesWithoutStockCue = [
+    'Emeğinin karşılığı tatlı bir haberle kapını çalacak.',
+    'Yakında yüzünü güldürecek bir haber kapını çalacak.',
+    'Masandaki boş fincan hoş bir karşılaşmaya yer açacak.',
+  ];
+
+  for (const text of naturalFortunesWithoutStockCue) {
+    assert.equal(hasUpliftingCue(text, 'tr'), false, text);
+    assert.equal(hasAtMostOnePersonalName(text, 'Atakan', 'tr'), true, text);
+  }
+  assert.equal(
+    hasAtMostOnePersonalName('Atakan, bugün Atakan için hoş bir haber var.', 'Atakan', 'tr'),
+    false,
+  );
 });
 
 test('literal invalid values and unresolved name placeholders are rejected in parity', () => {

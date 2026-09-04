@@ -11,7 +11,6 @@
 import { callGenerateFortuneCloudFunction } from './firebaseService.js';
 import { fortunesDatabase } from './fortunesData.js';
 import {
-  hasExactlyOnePersonalName,
   hasFrighteningOutcome,
   hasInvalidFortuneToken,
   isLikelyLanguage,
@@ -54,6 +53,35 @@ const UNSAFE_PATTERNS = [
   /\b(you will lose everything|you will be alone|you will never be happy|there is no hope)\b/iu
 ];
 
+const RETRYABLE_FORTUNE_ERROR_CODES = new Set([
+  'functions/aborted',
+  'aborted',
+  'functions/deadline-exceeded',
+  'deadline-exceeded',
+  'functions/unavailable',
+  'unavailable',
+  'auth/network-request-failed',
+  'network-request-failed',
+]);
+
+export function classifyFortuneRequestError(error) {
+  const code = String(error?.code || '');
+  const retryable = RETRYABLE_FORTUNE_ERROR_CODES.has(code);
+  if (code.endsWith('aborted')) {
+    return {
+      retryable: true,
+      message: 'İsteğin sunucuda hâlâ işleniyor. Birkaç saniye sonra kurabiyeye tekrar dokun; aynı istek ek premium hakkı kullanmadan sürdürülecek.',
+    };
+  }
+  if (retryable) {
+    return {
+      retryable: true,
+      message: 'AI yanıtı bağlantı veya zaman aşımı nedeniyle tamamlanamadı. Kurabiyeye tekrar dokun; aynı istek güvenle sürdürülecek ve ek premium hakkı kullanılmayacak.',
+    };
+  }
+  return { retryable: false, message: '' };
+}
+
 function cleanText(value) {
   return String(value || '')
     .trim()
@@ -70,13 +98,32 @@ function sanitizeFortuneName(value) {
     .slice(0, 32);
 }
 
+function hasAtMostOnePersonalName(value, expectedName = '', language = 'en') {
+  const name = sanitizeFortuneName(expectedName).toLocaleLowerCase(language);
+  if (!name) return true;
+  const text = String(value || '').normalize('NFKC').toLocaleLowerCase(language);
+  let occurrences = 0;
+  let cursor = 0;
+  while (cursor <= text.length - name.length) {
+    const index = text.indexOf(name, cursor);
+    if (index < 0) break;
+    const before = text.slice(0, index).match(/.$/u)?.[0] || '';
+    const after = text.slice(index + name.length).match(/^./u)?.[0] || '';
+    const isBoundary = character => !character || !/[\p{L}\p{M}\p{N}]/u.test(character);
+    if (isBoundary(before) && isBoundary(after)) occurrences += 1;
+    if (occurrences > 1) return false;
+    cursor = index + Math.max(name.length, 1);
+  }
+  return true;
+}
+
 export function isFortuneSafe(value, lang = 'en', expectedName = '') {
   const text = cleanText(value);
   if (text.length < 15 || text.length > 360) return false;
   if (UNSAFE_PATTERNS.some(pattern => pattern.test(text))) return false;
   if (hasFrighteningOutcome(text, lang)) return false;
   if (hasInvalidFortuneToken(text)) return false;
-  return hasExactlyOnePersonalName(text, expectedName, lang);
+  return hasAtMostOnePersonalName(text, expectedName, lang);
 }
 
 function getDatabase() {
@@ -130,7 +177,7 @@ export async function fetchRemoteAIPrediction(profile = {}, lang = 'tr', options
   try {
     const cloudResult = await callGenerateFortuneCloudFunction({
       ...profile
-    }, lang, requestId);
+    }, lang, requestId, options.timeoutMs);
 
     if (
       isFortuneSafe(cloudResult?.prediction, lang, expectedName) &&

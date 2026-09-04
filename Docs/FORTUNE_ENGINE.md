@@ -1,6 +1,6 @@
 # Fortune Engine
 
-Status: Repository-verified baseline as of 2026-08-29.
+Status: Repository-verified baseline as of 2026-09-04.
 
 ## Final displayed-text path
 
@@ -53,15 +53,17 @@ The wire request omits raw birth date/time, birthplace, country/city/region, coo
 ## Recovery status
 
 - Resolved: absent/invalid zodiac remains unavailable; neutral requests do not infer Aries or any sign.
-- Resolved: the optional sanitized name reaches the active prompt and is enforced exactly once by server/client validation.
+- Resolved: the optional sanitized name reaches the active prompt as inert data. A fortune may omit it; if used, server/client validation allows the exact name at most once.
 - Resolved: premium and rewarded AI share private non-repetition memory without exposing it as user-visible history.
 - Resolved: Latin-language guards reject marker-free English for non-English Latin locales; ten-language fixtures and the curated library are tested.
 - Resolved: `fortunesData.js` has exact 160-message parity with its declared source.
 - Resolved: client/server validators reject unresolved placeholders and frightening accident/death terms across all ten languages.
-- Resolved: the active AI validator requires a locale-specific uplifting cue and rejects explicit grammatical negation in all ten languages. This intentionally rejects even positive double-negative idioms: the prompt asks for direct affirmative wording, four retries remain available, and exhausted attempts use the existing observable refund path. Prompt cue/style rules and the validator contract are owned by `functions/fortuneQuality.js`; no failed candidate is delivered through a weaker "best safe" bypass.
+- Resolved: stock positive words and blanket grammatical-negation matching are no longer hard delivery requirements. Length, language, placeholder, fear, discouraging/gloomy premise, question, directive, sharing-bait and novelty gates remain deterministic; semantic positive tone is judged in context. No failed candidate is delivered through a weaker "best safe" bypass.
 - Resolved: Turkish negative-aorist scanning excludes only the already-sanitized exact personal-name token, so surnames such as Yılmaz remain usable while negative verbs in the message body are still rejected. Locale-specific "impossible" outcomes remain discouraging in all ten languages.
-- Resolved: semantic quality is no longer inferred from an open-ended action-verb regex list. A candidate must first pass deterministic length, language, name, placeholder, safety, affirmative-tone, directive, sharing-bait and novelty gates. Only then `functions/fortuneJudge.js` sends the candidate, language/locale and optional sanitized expected name to a separate low-temperature Gemini judgment call. The strict two-field JSON result is never displayed; only an explicit `approved` decision may be delivered.
-- Resolved: malformed judgment JSON, a judgment-provider error, or any semantic rejection rejects that candidate and consumes another one of the existing four generation attempts. Exhaustion follows the existing observable entitlement release plus `unavailable` response; it never returns a rejected candidate, judge text, cached substitute or local/legacy fortune. The judge receives no birth or location data.
+- Resolved: prompt and judge share three authentic Fortune Cookie archetypes: a hopeful near-future possibility, a lucky present-direction observation, or a playful recognition with warm surprise. The judge receives only candidate, language/locale and optional sanitized expected name; its structured result is never displayed.
+- Resolved: generation is limited to two attempts. Each generation has an 8-second total model deadline and each judge call a 4-second deadline, keeping the worst planned model budget below the callable's 45-second hard limit so entitlement release can run. Malformed/rejected candidates still follow the observable release plus `unavailable` path.
+- Resolved: the prompt targets 12 characters below the authoritative 80-character card ceiling because models do not count Unicode reliably. Validation keeps the real 80-character limit, reducing false rejection of otherwise valid candidates that overshoot the requested length by a few characters.
+- Resolved: premium client retries retain the same context-bound `requestId` across aborted, unavailable, network and client-timeout outcomes. A later retry can recover an idempotently completed server result without reserving another premium use; success and terminal/context-changing outcomes clear it. Rewarded/free routing is unchanged.
 - Remaining P2/P3: inactive legacy generator, orphan prompt helper, dormant optional fallback, and legacy local content override remain until decommissioning tests approve removal.
 
 ## Target authority

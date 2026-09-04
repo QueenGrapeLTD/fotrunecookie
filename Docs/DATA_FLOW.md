@@ -1,6 +1,6 @@
 # Data Flow
 
-Status: Recovery implementation baseline as of 2026-08-29.
+Status: Recovery implementation baseline as of 2026-09-04.
 
 ## Profile and request
 
@@ -20,7 +20,7 @@ Status: Recovery implementation baseline as of 2026-08-29.
 
 | Profile input | Free curated | Remote AI |
 | --- | --- | --- |
-| Name | May be prepended locally | Sanitized, sent, and required once when supplied |
+| Name | May be prepended locally | Sanitized and sent; optional in output, exact value at most once |
 | Category | Selects local pool | Sent and used |
 | Zodiac | Ignored | Sent and used when valid; absent stays neutral |
 | Rising sign | Ignored | Sent and used when valid |
@@ -42,6 +42,7 @@ Lucky numbers are generated after the fortune text and never influence AI genera
 ## Recovery status
 
 - Resolved: `requestId` is the stable local/cloud identity and merge preserves richer local metadata while collapsing legacy duplicates.
+- Resolved: a premium crack retains its context-bound `requestId` across retryable network, unavailable, aborted and client-timeout outcomes; success or terminal/context-changing outcomes clear it. The rewarded/free branch is unchanged.
 - Resolved: authenticated clear-history removes canonical and private novelty records independent of premium cache state.
 - Resolved: premium metadata enrichment uses explicit per-request persistence intent.
 - Legacy reflection/reaction fields may round-trip for compatibility, but no active UI writes or renders them.

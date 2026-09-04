@@ -34,7 +34,13 @@ An absent/invalid zodiac means no zodiac context. It must never default to Aries
 
 Status: Accepted and implemented.
 
-Transmit only a sanitized optional name, treat it as inert prompt data, and require it exactly once in validated output. Do not transmit raw birth or location fields.
+Transmit only a sanitized optional name and treat it as inert prompt data. A result may omit it; if present, the exact sanitized name may occur at most once. This avoids forced, repetitive address while preserving injection and duplication controls. Do not transmit raw birth or location fields.
+
+## D-009 — Bounded premium AI recovery
+
+Status: Accepted and implemented.
+
+Use two candidate attempts with bounded generation and judge deadlines below the callable hard timeout. Preserve quota release on failure, and reuse one context-bound premium `requestId` for retryable client failures so a completed idempotent result can be recovered without another reservation.
 
 ## D-007 — Reflection ownership
 
