@@ -286,7 +286,7 @@ test('premium delivery requires original Vertex AI content and refunds provider 
   assert.match(generateFortuneSource, /creativeVariationKey\(uid, requestId\)/);
   assert.match(generateFortuneSource, /selectApprovedFortune/);
   assert.match(generateFortuneSource, /attempts: FORTUNE_CANDIDATE_ATTEMPTS/);
-  assert.match(functionsSource, /FORTUNE_CANDIDATE_ATTEMPTS = 2/);
+  assert.match(functionsSource, /FORTUNE_CANDIDATE_ATTEMPTS = 3/);
   assert.match(generateFortuneSource, /requestFortuneJudgment/);
   assert.match(generateFortuneSource, /hasDiscouragingTone/);
   assert.match(generateFortuneSource, /hasHeavyNegativeFraming/);

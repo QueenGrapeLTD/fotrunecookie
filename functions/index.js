@@ -43,7 +43,7 @@ const GOOGLE_CLOUD_PROJECT =
 const GEMINI_VERTEX_LOCATION = process.env.GEMINI_VERTEX_LOCATION || "global";
 const GEMINI_PROVIDER = `${GEMINI_MODEL} (Vertex AI)`;
 const GEMINI_MAX_OUTPUT_TOKENS = 220;
-const FORTUNE_CANDIDATE_ATTEMPTS = 2;
+const FORTUNE_CANDIDATE_ATTEMPTS = 3;
 const GENERATION_DEADLINE_MS = 8_000;
 const JUDGE_DEADLINE_MS = 4_000;
 const ADMOB_KEYS_URL =
@@ -448,7 +448,7 @@ function contentMetadata(content, variantType) {
 function isValidAdaptation(prediction, lang, localeConfig, recentFortunes, name = "") {
   return (
     prediction.length >= 15 &&
-    prediction.length <= localeConfig.maxCharacters &&
+    prediction.length <= localeConfig.deliveryMaxCharacters &&
     !UNSAFE_OUTPUT.test(prediction) &&
     !hasFrighteningOutcome(prediction, lang) &&
     !hasInvalidFortuneToken(prediction) &&
@@ -1889,6 +1889,9 @@ exports.generateFortune = onCall(
               : null,
             finishReason: candidateResult.finishReason,
             length: candidate.length,
+            fitsDeliveryLimit:
+              candidate.length >= 15 &&
+              candidate.length <= localeConfig.deliveryMaxCharacters,
             personalNameUsedAtMostOnce: hasAtMostOnePersonalName(candidate, name, lang),
             frighteningOutcome: hasFrighteningOutcome(candidate, lang),
             invalidToken: hasInvalidFortuneToken(candidate),
@@ -1897,6 +1900,9 @@ exports.generateFortune = onCall(
             questionForm: hasQuestionForm(candidate),
             staleMysticCliche: hasStaleMysticCliche(candidate),
             uplifting: hasUpliftingTone(candidate, lang, name),
+            correctLanguage: isLikelyLanguage(candidate, lang),
+            directiveStyle: hasDirectiveStyle(candidate, lang),
+            sharingBait: SHARING_BAIT_OUTPUT.test(candidate),
             similar: isTooSimilar(candidate, recentFortunes),
           });
         },
@@ -1910,7 +1916,11 @@ exports.generateFortune = onCall(
       }
 
       if (!prediction) {
-        throw new Error("Gemini did not return a safe, original fortune.");
+        const qualityError = new Error(
+          "Gemini did not return a safe, original fortune.",
+        );
+        qualityError.code = "quality-exhausted";
+        throw qualityError;
       }
       const generatedContent = {
         id: `ai_original_${lang}_${category}`,
@@ -1973,6 +1983,11 @@ exports.generateFortune = onCall(
       throw new HttpsError(
         "unavailable",
         "AI Şans Kurabiyesi şu anda üretilemedi.",
+        {
+          reason: error?.code === "quality-exhausted"
+            ? "quality-exhausted"
+            : "provider-unavailable",
+        },
       );
     }
   },

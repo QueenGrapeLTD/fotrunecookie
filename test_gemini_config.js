@@ -46,7 +46,7 @@ test("Gemini usage and token-ceiling failures are observable", () => {
 
 test("fortune prompt is locale-aware and fits the story-card message area", () => {
   assert.match(source, /getFortuneLocale\(lang\)/);
-  assert.match(source, /prediction\.length <= localeConfig\.maxCharacters/);
+  assert.match(source, /prediction\.length <= localeConfig\.deliveryMaxCharacters/);
   assert.match(source, /hasRequiredStructure = prediction\.length >= 15/);
   assert.match(source, /isUsableCardResponse/);
   assert.match(source, /hardCardLimit/);
@@ -136,7 +136,7 @@ test("active AI validation keeps hard safety gates and bounds semantic review", 
   assert.match(validatorSource, /SHARING_BAIT_OUTPUT/);
   assert.match(generateFortuneSource, /selectApprovedFortune/);
   assert.match(generateFortuneSource, /attempts: FORTUNE_CANDIDATE_ATTEMPTS/);
-  assert.match(source, /FORTUNE_CANDIDATE_ATTEMPTS = 2/);
+  assert.match(source, /FORTUNE_CANDIDATE_ATTEMPTS = 3/);
   assert.match(source, /GENERATION_DEADLINE_MS = 8_000/);
   assert.match(source, /JUDGE_DEADLINE_MS = 4_000/);
   assert.match(source, /httpOptions:[\s\S]*?timeout: remainingMs/);
@@ -152,6 +152,11 @@ test("active AI validation keeps hard safety gates and bounds semantic review", 
   assert.match(generateFortuneSource, /Gemini did not return a safe, original fortune/);
   assert.match(generateFortuneSource, /await releaseAiUsage\(uid, requestId, modelUsage\)/);
   assert.match(generateFortuneSource, /new HttpsError\(\s*"unavailable"/);
+  assert.match(generateFortuneSource, /reason: error\?\.code === "quality-exhausted"/);
+  assert.match(generateFortuneSource, /fitsDeliveryLimit/);
+  assert.match(generateFortuneSource, /correctLanguage/);
+  assert.match(generateFortuneSource, /directiveStyle/);
+  assert.match(generateFortuneSource, /sharingBait/);
 });
 
 test("rewarded and premium AI share private novelty history", () => {
@@ -196,6 +201,10 @@ test("all ten languages have explicit locale and character profiles", () => {
   }
   assert.match(localeSource, /maxCharacters/);
   assert.equal((localeSource.match(/maxCharacters: 80/g) || []).length, 10);
+  assert.equal(
+    (localeSource.match(/deliveryMaxCharacters: 135/g) || []).length,
+    10,
+  );
   assert.match(localeSource, /culturalProfile/);
   assert.match(localeSource, /sounds originally written in Turkish/);
   assert.match(localeSource, /natural Turkish word order/);

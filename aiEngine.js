@@ -64,9 +64,23 @@ const RETRYABLE_FORTUNE_ERROR_CODES = new Set([
   'network-request-failed',
 ]);
 
+function fortuneRequestErrorReason(error) {
+  const details = error?.details;
+  const reason = typeof details === 'string'
+    ? details
+    : details?.reason || details?.code || '';
+  return String(reason).trim().toUpperCase().replace(/[-\s]+/g, '_');
+}
+
 export function classifyFortuneRequestError(error) {
   const code = String(error?.code || '');
   const retryable = RETRYABLE_FORTUNE_ERROR_CODES.has(code);
+  if (fortuneRequestErrorReason(error) === 'QUALITY_EXHAUSTED') {
+    return {
+      retryable: true,
+      message: 'AI bu denemede kalite kontrolünü geçen bir Şans Kurabiyesi yazısı üretemedi. Kurabiyeye tekrar dokun; yeniden üretim ek premium hakkı kullanmadan denenecek.',
+    };
+  }
   if (code.endsWith('aborted')) {
     return {
       retryable: true,

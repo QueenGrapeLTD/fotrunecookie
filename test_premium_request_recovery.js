@@ -86,6 +86,34 @@ test('fortune request errors distinguish recoverable transport failures from ter
   );
 });
 
+test('quality exhaustion is not presented as a connection or timeout failure', () => {
+  const fragment = sourceFragment(
+    aiEngineSource,
+    'const RETRYABLE_FORTUNE_ERROR_CODES',
+    'function cleanText',
+  );
+  const classify = new Function(`
+    ${fragment}
+    return classifyFortuneRequestError;
+  `)();
+
+  for (const details of [
+    { reason: 'QUALITY_EXHAUSTED' },
+    { reason: 'quality-exhausted' },
+    'quality_exhausted',
+  ]) {
+    const result = classify({ code: 'functions/unavailable', details });
+    assert.equal(result.retryable, true);
+    assert.match(result.message, /kalite kontrolünü/);
+    assert.match(result.message, /tekrar dokun/);
+    assert.match(result.message, /ek premium hakkı/);
+    assert.doesNotMatch(result.message, /bağlantı|zaman aşımı/);
+  }
+
+  const transportFailure = classify({ code: 'functions/unavailable' });
+  assert.match(transportFailure.message, /bağlantı veya zaman aşımı/);
+});
+
 test('client validation allows an optional profile name but rejects repeated names', () => {
   const fragment = sourceFragment(
     aiEngineSource,
