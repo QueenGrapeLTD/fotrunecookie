@@ -424,8 +424,10 @@ export async function callGenerateFortuneCloudFunction(
       ? await settleFortuneCallWithTimeout(invocation, timeoutMs)
       : await invocation;
 
-    const prediction = cleanString(result?.data?.prediction, 360);
-    if (!prediction) return null;
+    const prediction = typeof result?.data?.prediction === "string"
+      ? result.data.prediction.trim()
+      : "";
+    if (!prediction || prediction.length > 200) return null;
 
     return {
       success: true,

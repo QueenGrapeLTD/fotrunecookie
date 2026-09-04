@@ -30,26 +30,72 @@ function loadTemplate() {
   return templatePromise;
 }
 
-function fitWrappedText(ctx, text, {
+function graphemes(value) {
+  const text = String(value || '');
+  if (typeof Intl?.Segmenter === 'function') {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    return [...segmenter.segment(text)].map(({ segment }) => segment);
+  }
+  return Array.from(text);
+}
+
+function splitOversizedToken(ctx, token, width) {
+  const lines = [];
+  let line = '';
+  for (const grapheme of graphemes(token)) {
+    const candidate = `${line}${grapheme}`;
+    if (line && ctx.measureText(candidate).width > width) {
+      lines.push(line);
+      line = grapheme;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+export function wrapMeasuredText(ctx, text, width) {
+  const cleanText = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!cleanText) return [];
+
+  const lines = [];
+  let line = '';
+  for (const word of cleanText.split(' ')) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (line && ctx.measureText(candidate).width > width) {
+      lines.push(line);
+      line = '';
+    }
+
+    if (ctx.measureText(word).width > width) {
+      const fragments = splitOversizedToken(ctx, word, width);
+      lines.push(...fragments.slice(0, -1));
+      line = fragments.at(-1) || '';
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function fitLineWithEllipsis(ctx, line, width) {
+  const units = graphemes(line);
+  while (units.length && ctx.measureText(`${units.join('').trimEnd()}…`).width > width) {
+    units.pop();
+  }
+  return `${units.join('').trimEnd()}…`;
+}
+
+export function fitWrappedText(ctx, text, {
   x, top, width, height, maxSize, minSize, lineHeightRatio = 1.35,
   fontFamily = 'Georgia, serif', fontStyle = '', fontWeight = '600'
 }) {
   const cleanText = String(text || '').replace(/\s+/g, ' ').trim();
   for (let size = maxSize; size >= minSize; size -= 2) {
     ctx.font = `${fontStyle} ${fontWeight} ${size}px ${fontFamily}`.trim();
-    const words = cleanText.split(' ');
-    const lines = [];
-    let line = '';
-    for (const word of words) {
-      const candidate = line ? `${line} ${word}` : word;
-      if (ctx.measureText(candidate).width > width && line) {
-        lines.push(line);
-        line = word;
-      } else {
-        line = candidate;
-      }
-    }
-    if (line) lines.push(line);
+    const lines = wrapMeasuredText(ctx, cleanText, width);
     const lineHeight = size * lineHeightRatio;
     if (lines.length * lineHeight <= height) {
       const firstY = top + ((height - lines.length * lineHeight) / 2) + size;
@@ -59,29 +105,17 @@ function fitWrappedText(ctx, text, {
   }
 
   ctx.font = `${fontStyle} ${fontWeight} ${minSize}px ${fontFamily}`.trim();
-  const words = cleanText.split(' ');
-  const lines = [];
-  let line = '';
-  for (const word of words) {
-    const candidate = line ? `${line} ${word}` : word;
-    if (ctx.measureText(candidate).width > width && line) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = candidate;
-    }
-  }
-  if (line) lines.push(line);
+  const lines = wrapMeasuredText(ctx, cleanText, width);
 
   const lineHeight = minSize * lineHeightRatio;
   const maxLines = Math.max(1, Math.floor(height / lineHeight));
   const visibleLines = lines.slice(0, maxLines);
   if (lines.length > maxLines) {
-    let lastLine = `${visibleLines[maxLines - 1]}…`;
-    while (lastLine.length > 1 && ctx.measureText(lastLine).width > width) {
-      lastLine = `${lastLine.slice(0, -2).trim()}…`;
-    }
-    visibleLines[maxLines - 1] = lastLine;
+    visibleLines[maxLines - 1] = fitLineWithEllipsis(
+      ctx,
+      visibleLines[maxLines - 1],
+      width,
+    );
   }
   const firstY = top + ((height - visibleLines.length * lineHeight) / 2) + minSize;
   visibleLines.forEach((item, index) => ctx.fillText(item, x, firstY + index * lineHeight));

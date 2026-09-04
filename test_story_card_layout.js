@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { fitWrappedText, wrapMeasuredText } from './cardExporter.js';
 
 const css = fs.readFileSync(new URL('./style.css', import.meta.url), 'utf8');
 const exporter = fs.readFileSync(new URL('./cardExporter.js', import.meta.url), 'utf8');
@@ -43,4 +44,53 @@ test('story sharing exposes one share action without download or copy controls',
   assert.doesNotMatch(html, /id="btn-download-story"/);
   assert.doesNotMatch(html, /id="btn-share"/);
   assert.doesNotMatch(main, /handleDownloadStory|copyToClipboard|shareFortune/);
+});
+
+function createMeasuredContext(unitWidth = 10) {
+  const drawn = [];
+  return {
+    drawn,
+    font: '',
+    measureText(value) {
+      return { width: [...String(value)].length * unitWidth };
+    },
+    fillText(value, x, y) {
+      drawn.push({ value, x, y });
+    },
+  };
+}
+
+test('story wrapping safely fits 200-character Latin and unspaced CJK text', () => {
+  const ctx = createMeasuredContext();
+  const samples = [
+    'Güzel bir fırsat gününe sıcaklık katabilir. '.repeat(5).trim().slice(0, 200),
+    '好運正在靠近你的日常選擇'.repeat(20).slice(0, 200),
+    '小さな幸運が今日の選択を明るくします'.repeat(20).slice(0, 200),
+  ];
+
+  for (const sample of samples) {
+    const lines = wrapMeasuredText(ctx, sample, 120);
+    assert.ok(lines.length > 1);
+    assert.ok(lines.every(line => ctx.measureText(line).width <= 120));
+    assert.equal(lines.join('').replace(/\s/g, ''), sample.replace(/\s/g, ''));
+  }
+});
+
+test('story overflow keeps a grapheme-safe fitted ellipsis', () => {
+  const ctx = createMeasuredContext();
+  const sample = `${'幸運'.repeat(99)}💫`;
+  fitWrappedText(ctx, sample, {
+    x: 50,
+    top: 0,
+    width: 50,
+    height: 10,
+    maxSize: 10,
+    minSize: 10,
+    lineHeightRatio: 1,
+  });
+
+  assert.equal(ctx.drawn.length, 1);
+  assert.match(ctx.drawn[0].value, /…$/u);
+  assert.ok(ctx.measureText(ctx.drawn[0].value).width <= 50);
+  assert.equal(ctx.drawn[0].value.isWellFormed(), true);
 });

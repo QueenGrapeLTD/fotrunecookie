@@ -637,10 +637,10 @@ function buildLocalizedFortunePrompt({
         .map((entry, index) => `${index + 1}. ${JSON.stringify(entry.text)}`)
         .join("\n")
     : "No previous messages.";
-  // Models do not count Unicode characters reliably. Keep a delivery buffer so
-  // a good candidate is not rejected for overshooting the 80-character card by
-  // only a few characters, while the authoritative validator remains unchanged.
-  const generationCharacterTarget = Math.max(48, localeConfig.maxCharacters - 12);
+  // Models do not count Unicode characters reliably. Keep the generation target
+  // separate from the hard delivery ceiling so a modest overshoot can still be
+  // evaluated by every authoritative safety and semantic quality gate.
+  const generationCharacterTarget = localeConfig.generationTargetCharacters;
 
   return `ROLE
 You are FortuneCookieAI's multilingual, culturally localized Fortune Cookie message engine. The content is for entertainment, reflection and encouragement; never present fate, supernatural certainty or guaranteed outcomes.
@@ -678,7 +678,7 @@ ${recentExamples}
 STRICT RULES
 1. Think and write directly in ${localeConfig.language} for ${localeConfig.locale}; never draft in another language or mix languages.
 2. Follow localeProfile for natural vocabulary, punctuation, address, emotional intensity and rhythm. Do not use translated idioms.
-3. Choose the most natural sentence count and length for this particular message. A sharp 35-character line and a richer 60-character message are equally valid.
+3. Choose the most natural sentence count and length for this particular message. Concise and medium-length messages are equally valid.
 4. The entire output must be at most ${generationCharacterTarget} Unicode characters. Shorter is welcome; never pad the message to approach the limit.
 5. Return only the message: no title, sign names, quote marks, emoji, Markdown, JSON or explanation. A personal name is optional. Use personalName only when it genuinely improves warmth; if used, include that exact data value naturally at most once. When unavailable, do not invent a name.
 6. You may use one universal everyday image, sensory detail or season as metaphor, but never claim that a specific event has happened or will certainly happen to the reader.
@@ -1623,7 +1623,8 @@ const legacyGenerateFortune = onCall(
         const hasRequiredStructure = prediction.length >= 15;
         const hasForbiddenDirective = hasDirectiveStyle(prediction, lang);
         const hasSharingBait = SHARING_BAIT_OUTPUT.test(prediction);
-        const fitsLocaleLimit = prediction.length <= localeConfig.maxCharacters;
+        const fitsLocaleLimit =
+          prediction.length <= localeConfig.deliveryMaxCharacters;
         const hardCardLimit = 80;
         const isUsableCardResponse =
           prediction.length >= 15 &&
@@ -1652,7 +1653,8 @@ const legacyGenerateFortune = onCall(
             lang,
             attempt,
             length: prediction.length,
-            maxCharacters: localeConfig.maxCharacters,
+            generationTargetCharacters: localeConfig.generationTargetCharacters,
+            deliveryMaxCharacters: localeConfig.deliveryMaxCharacters,
             hardCardLimit,
             isSafe,
             isCorrectLanguage,

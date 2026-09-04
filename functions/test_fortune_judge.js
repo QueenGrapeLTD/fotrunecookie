@@ -216,15 +216,15 @@ test("two semantic rejections exhaust the bounded attempt budget", async () => {
 
 test("a third candidate can recover after two local delivery rejections", async () => {
   const candidates = [
-    "x".repeat(136),
-    "y".repeat(136),
+    "x".repeat(201),
+    "y".repeat(201),
     "A welcome surprise is already finding its way toward you.",
   ];
   let judgeCalls = 0;
   const result = await selectApprovedFortune({
     attempts: 3,
     createCandidate: async (attempt) => ({ candidate: candidates[attempt] }),
-    isLocallyValid: ({ candidate }) => candidate.length <= 135,
+    isLocallyValid: ({ candidate }) => candidate.length <= 200,
     judgeCandidate: async () => {
       judgeCalls += 1;
       return judgment(true, "approved");

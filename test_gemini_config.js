@@ -53,10 +53,13 @@ test("fortune prompt is locale-aware and fits the story-card message area", () =
   assert.match(source, /Shorter is welcome/);
   assert.match(source, /selected recipe below/);
   assert.match(source, /hardCardLimit = 80/);
-  assert.match(source, /generationCharacterTarget = Math\.max\(48, localeConfig\.maxCharacters - 12\)/);
+  assert.match(
+    source,
+    /generationCharacterTarget = localeConfig\.generationTargetCharacters/,
+  );
   assert.match(source, /generationTargetCharacters: \$\{generationCharacterTarget\}/);
-  assert.match(source, /a richer 60-character message/);
-  assert.doesNotMatch(source, /a richer 75-character message/);
+  assert.match(source, /Concise and medium-length messages are equally valid/);
+  assert.match(source, /never pad the message to approach the limit/);
   assert.match(source, /Do not automatically use Japanese motifs/);
   assert.match(source, /one universal everyday image/);
   assert.match(source, /never force a stock positive keyword/);
@@ -199,10 +202,12 @@ test("all ten languages have explicit locale and character profiles", () => {
   ]) {
     assert.match(localeSource, new RegExp(locale));
   }
-  assert.match(localeSource, /maxCharacters/);
-  assert.equal((localeSource.match(/maxCharacters: 80/g) || []).length, 10);
   assert.equal(
-    (localeSource.match(/deliveryMaxCharacters: 135/g) || []).length,
+    (localeSource.match(/generationTargetCharacters: 160/g) || []).length,
+    10,
+  );
+  assert.equal(
+    (localeSource.match(/deliveryMaxCharacters: 200/g) || []).length,
     10,
   );
   assert.match(localeSource, /culturalProfile/);

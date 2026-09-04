@@ -139,6 +139,26 @@ test('client validation allows an optional profile name but rejects repeated nam
   );
 });
 
+test('client fortune validation and callable parsing enforce the 200-character contract', () => {
+  const fragment = sourceFragment(
+    aiEngineSource,
+    'function cleanText',
+    'function getDatabase',
+  );
+  const isSafe = new Function(
+    'UNSAFE_PATTERNS',
+    'hasFrighteningOutcome',
+    'hasInvalidFortuneToken',
+    `${fragment}\nreturn isFortuneSafe;`,
+  )([], () => false, () => false);
+
+  assert.equal(isSafe('a'.repeat(200), 'en'), true);
+  assert.equal(isSafe('a'.repeat(201), 'en'), false);
+  assert.match(firebaseSource, /prediction\.length > 200/);
+  assert.doesNotMatch(firebaseSource, /cleanString\(result\?\.data\?\.prediction, 200\)/);
+  assert.doesNotMatch(firebaseSource, /cleanString\(result\?\.data\?\.prediction, 360\)/);
+});
+
 test('fortune callable timeout is bounded and reports deadline-exceeded deterministically', async () => {
   const fragment = sourceFragment(
     firebaseSource,

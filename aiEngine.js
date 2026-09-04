@@ -133,7 +133,7 @@ function hasAtMostOnePersonalName(value, expectedName = '', language = 'en') {
 
 export function isFortuneSafe(value, lang = 'en', expectedName = '') {
   const text = cleanText(value);
-  if (text.length < 15 || text.length > 360) return false;
+  if (text.length < 15 || text.length > 200) return false;
   if (UNSAFE_PATTERNS.some(pattern => pattern.test(text))) return false;
   if (hasFrighteningOutcome(text, lang)) return false;
   if (hasInvalidFortuneToken(text)) return false;
